@@ -1,0 +1,116 @@
+/* Clean, mobile-first styles for the login component */
+
+/* make sizing consistent */
+*, *::before, *::after { box-sizing: border-box; }
+
+.login-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  background: linear-gradient(135deg, #66ea66 0%, #4b8ea2 100%);
+  padding: 1rem;
+}
+
+.login-card {
+  width: 100%;
+  max-width: 420px;
+  margin: 0 auto;
+  padding: 0 0.5rem;
+}
+
+/* header sitting above the card (stacked on small screens) */
+.login-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+  text-align: center;
+}
+
+.login-logo {
+  width: 56px;
+  height: auto;
+  max-width: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+.login-title {
+  color: #111827;
+  font-weight: 700;
+  font-size: 0.95rem;
+  line-height: 1.1;
+  max-width: 260px;
+  word-break: break-word;
+}
+
+.login-wrapper {
+  background: #ffffff;
+  padding: 1.5rem;
+  border-radius: 8px;
+  box-shadow: 0 10px 25px rgba(0,0,0,0.12);
+  width: 100%;
+}
+
+.login-heading {
+  margin: 0 0 1rem;
+  text-align: center;
+  color: #111827;
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+
+.form-group { margin-bottom: 1.25rem; }
+
+.form-group label { display:block; margin-bottom:0.5rem; color:#555; font-weight:500; font-size:0.95rem; }
+
+.form-group input {
+  width: 100%;
+  padding: 0.75rem;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  font-size: 1rem;
+}
+
+.form-group input:focus { outline:none; border-color:#667eea; box-shadow: 0 0 0 3px rgba(102,126,234,0.08); }
+
+.login-btn {
+  width: 100%;
+  padding: 0.75rem;
+  background: linear-gradient(135deg, #66ea66 0%, #4b8ea2 100%);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.login-btn .login-icon, .login-btn svg { width: 1.05em; height: 1.05em; }
+
+.error-message {
+  color: #e53e3e;
+  background: #fff5f5;
+  padding: 0.75rem;
+  border-radius: 4px;
+  margin-bottom: 1rem;
+  font-size: 0.9rem;
+  border-left: 4px solid #e53e3e;
+}
+
+/* Tablet and above */
+@media (min-width: 640px) {
+  .login-container { padding: 2rem; }
+  .login-card { max-width: 420px; }
+  .login-header { flex-direction: row; gap: 1rem; align-items: center; margin-bottom: 0.75rem; }
+  .login-logo { width: 84px; }
+  .login-wrapper { padding: 2.25rem; }
+  .login-heading { font-size: 1.5rem; }
+}
