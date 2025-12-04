@@ -1,0 +1,29 @@
+.mainform-container {
+  width: 100%;
+  max-width: 900px;
+  margin: 1rem auto;
+  box-sizing: border-box;
+  padding: 0 1rem;
+}
+
+.panel {
+  display: none; /* hidden until activated */
+  background: #ffffff;
+  border-radius: 8px;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.08);
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+
+.panel.active { display: block; }
+
+.panel h2 { margin: 0 0 0.5rem; font-size: 1.25rem; }
+.panel-note { margin: 0 0 1rem; color: #666; font-size: 0.95rem; }
+.panel-field { margin: 0.45rem 0; color: #222; }
+.placeholder { color:#888; font-style: italic }
+
+/* small responsive tweaks */
+@media (min-width: 640px) {
+  .mainform-container { padding: 0; }
+  .panel { padding: 1.25rem; }
+}
