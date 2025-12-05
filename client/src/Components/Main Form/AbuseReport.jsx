@@ -136,7 +136,12 @@ export default function AbuseReport({ onFinish = () => {}, onCancel = () => {} }
             <div className="survey-step">
               <h3 className="survey-title">{q.q} {q.required === false && <span style={{fontWeight:600, color:'#666', fontSize:'0.9rem'}}> (optional)</span>}</h3>
               {q.type === 'text' && (
-                <input className="survey-input" value={answers[q.id] || ''} onChange={e => handleChange(q.id, e.target.value)} />
+                <textarea
+                  className="survey-input"
+                  value={answers[q.id] || ''}
+                  onChange={e => handleChange(q.id, e.target.value)}
+                  onInput={e => { e.target.style.height = 'auto'; e.target.style.height = e.target.scrollHeight + 'px'; }}
+                />
               )}
               {q.type === 'choice' && (
                 <div className="survey-choices">

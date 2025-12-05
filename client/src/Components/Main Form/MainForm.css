@@ -4,6 +4,8 @@
   margin: 1rem auto;
   box-sizing: border-box;
   padding: 0 1rem;
+  position: relative;
+  padding-bottom: 72px; /* reserve space for bottom controls */
 }
 
 .panel {
@@ -14,13 +16,45 @@
   padding: 1rem;
   margin-bottom: 1rem;
 }
+/* add extra bottom padding inside panels so bottom controls don't overlap */
+.panel { padding-bottom: 3.5rem; }
 
 .panel.active { display: block; }
 
 .panel h2 { margin: 0 0 0.5rem; font-size: 1.25rem; }
+.panel-top { display:flex; align-items:center; justify-content:space-between; gap:0.75rem; }
 .panel-note { margin: 0 0 1rem; color: #666; font-size: 0.95rem; }
 .panel-field { margin: 0.45rem 0; color: #222; }
 .placeholder { color:#888; font-style: italic }
+
+/* logout button positioned at bottom-right of the form container */
+.panel { position: relative; }
+
+.floating-logout {
+  align-self: flex-end; /* move to bottom-right */
+  margin-top: auto;     /* push it to the bottom */
+  margin-right: 12px;
+  margin-bottom: 12px;
+
+  padding: 0.75rem 1rem;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+
+  box-shadow: 0 6px 18px rgba(118,75,162,0.16);
+  transition: transform 150ms ease, box-shadow 150ms ease;
+}
+
+.floating-logout:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 28px rgba(118,75,162,0.20);
+}
+
 
 /* Main form header (logo + title) shown at top of the form container */
 .mainform-header {
@@ -43,6 +77,52 @@
   padding: 0;
 }
 .panel-title-inner { font-weight: 700; color: #111827; line-height: 1.05; }
+
+/* header actions (message button) */
+.header-actions { margin-left: auto; display:flex; align-items:center }
+.message-btn { background: transparent; border: none; padding: 0.35rem; border-radius: 8px; cursor: pointer; color: #4b5563; display:inline-flex; align-items:center; justify-content:center; font-size:1.1rem }
+.message-btn:hover { background: rgba(99,102,241,0.06); color: #3730a3 }
+
+/* Header logout button (outside panels) */
+.header-logout-btn {
+  margin-left: 8px;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  width:36px;
+  height:36px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  box-shadow: 0 8px 24px rgba(118,75,162,0.14);
+  transition: transform 150ms ease, box-shadow 150ms ease;
+}
+.header-logout-btn:hover { transform: translateY(-3px); box-shadow: 0 14px 36px rgba(118,75,162,0.22); }
+
+.survey-review {
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-wrap: break-word;
+  word-break: break-word;
+
+  width: 100%;
+  max-width: 100%;
+}
+
+/* position adjustments to prevent overlap on smaller screens */
+@media (max-width: 639px) {
+  .mainform-container { padding-bottom: 56px; }
+  .logout-btn { right: 12px; bottom: 12px; padding: 0.4rem 0.65rem; font-size: 0.9rem }
+  .panel { padding-bottom: 1rem }
+}
+
+@media (min-width: 1024px) {
+  .mainform-container { padding-bottom: 48px }
+  .logout-btn { right: 28px; bottom: 28px }
+  .panel { padding-bottom: 1.25rem }
+}
 
 /* Student panel quick action button */
 .panel-body { margin-top: 0.5rem; }
@@ -78,3 +158,23 @@
   .mainform-container { padding: 0; }
   .panel { padding: 1.25rem; }
 }
+
+/* Messages panel styles */
+.messages-container { display:flex; flex-direction:column; gap:0.5rem }
+.messages-header { display:flex; align-items:center; gap:0.5rem; justify-content:space-between; padding-bottom:0.25rem }
+.messages-title { font-weight:700 }
+.messages-list { max-height: 360px; overflow:auto; display:flex; flex-direction:column; gap:0.5rem; padding:0.5rem }
+.message-item { display:flex; flex-direction:column; max-width:80%; }
+.message-item.incoming { align-self:flex-start }
+.message-item.outgoing { align-self:flex-end }
+.bubble { background:#f3f4f6; padding:0.6rem 0.75rem; border-radius:10px; color:#111 }
+.message-item.outgoing .bubble { background: linear-gradient(135deg,#667eea,#764ba2); color:#fff }
+.msg-time { font-size:0.75rem; color:#666; margin-top:0.25rem }
+.message-input-area { display:flex; gap:0.5rem; align-items:flex-end }
+.message-textarea { width:100%; min-height:40px; max-height:160px; resize:none; padding:0.5rem; border-radius:8px; border:1px solid #e5e7eb; overflow:hidden }
+.send-btn { background:#4b8ea2; color:#fff; border:none; padding:0.5rem 0.75rem; border-radius:8px; cursor:pointer }
+.messages-note { font-size:0.85rem; color:#666; margin-top:0.5rem }
+
+/* survey textarea adjustments */
+.survey-input { width: 100%; padding: 0.6rem; border:1px solid #ddd; border-radius:6px; }
+textarea.survey-input { min-height:48px; resize:none; overflow:hidden }
