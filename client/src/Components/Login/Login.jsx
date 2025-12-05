@@ -20,10 +20,12 @@ const Login = () => {
   return (
     <div className="login-container">
       <div className="login-card">
-        <div className="login-header">
-          <img src={logo} alt="logo" className="login-logo" />
-          <div className="login-title">F. Bangoy National High School<br/> Abuse Report Forum</div>
-        </div>
+        {!showMain && (
+          <div className="login-header">
+            <img src={logo} alt="logo" className="login-logo" />
+            <div className="login-title">F. Bangoy National High School<br/> Abuse Report Form</div>
+          </div>
+        )}
 
         {/* If showMain is true, render the MainForm (both panels) instead of the login form */}
         {!showMain ? (
@@ -61,7 +63,7 @@ const Login = () => {
           </div>
         ) : (
           <div className="login-wrapper">
-            <MainForm role="both" />
+            <MainForm role="student" header={{ logo, title: 'F. Bangoy National High School\nAbuse Report Forum' }} />
           </div>
         )}
       </div>

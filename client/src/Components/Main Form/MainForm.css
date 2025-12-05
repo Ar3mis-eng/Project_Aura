@@ -22,6 +22,57 @@
 .panel-field { margin: 0.45rem 0; color: #222; }
 .placeholder { color:#888; font-style: italic }
 
+/* Main form header (logo + title) shown at top of the form container */
+.mainform-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  background: #ffffff; /* plain white header */
+  color: #111827; /* dark text */
+  box-shadow: 0 8px 20px rgba(0,0,0,0.08); /* subtle floating shadow */
+}
+.panel-logo {
+  width: 64px;
+  height: auto;
+  display: block;
+  border-radius: 6px;
+  background: transparent;
+  padding: 0;
+}
+.panel-title-inner { font-weight: 700; color: #111827; line-height: 1.05; }
+
+/* Student panel quick action button */
+.panel-body { margin-top: 0.5rem; }
+.report-btn {
+  width: 100%;
+  padding: 0.75rem;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: center;
+}
+.report-btn:hover { transform: translateY(-2px); box-shadow: 0 6px 18px rgba(118,75,162,0.16); }
+
+/* Survey / abuse report styles */
+.survey-container { max-width: 720px; margin: 0 auto; }
+.survey-step { background: #fff; padding: 1rem; border-radius: 8px; box-shadow: 0 6px 18px rgba(0,0,0,0.06); }
+.survey-title { margin: 0 0 0.5rem; font-size: 1rem; }
+.survey-select, .survey-input { width: 100%; padding: 0.6rem; border:1px solid #ddd; border-radius:6px; }
+.survey-choices { display:flex; flex-direction:column; gap:0.5rem; }
+.survey-choice input { margin-right:0.5rem }
+.survey-actions { display:flex; gap:0.5rem; margin-top:0.75rem }
+.survey-next, .survey-back, .survey-submit, .survey-cancel { padding:0.5rem 0.75rem; border-radius:6px; border:none; cursor:pointer }
+.survey-next { background: #4b8ea2; color:#fff }
+.survey-back, .survey-cancel { background:#f3f4f6 }
+.survey-submit { background:#111827; color:#fff }
+
+
 /* small responsive tweaks */
 @media (min-width: 640px) {
   .mainform-container { padding: 0; }
