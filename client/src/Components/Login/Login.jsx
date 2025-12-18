@@ -63,7 +63,7 @@ const Login = () => {
           </div>
         ) : (
           <div className="login-wrapper">
-            <MainForm role="student" header={{ logo, title: 'F. Bangoy National High School\nAbuse Report Form' }} onLogout={() => setShowMain(false)} />
+            <MainForm role="teacher" header={{ logo, title: 'F. Bangoy National High School\nAbuse Report Form' }} onLogout={() => setShowMain(false)} />
           </div>
         )}
       </div>

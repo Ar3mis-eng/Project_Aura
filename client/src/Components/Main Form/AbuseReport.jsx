@@ -57,6 +57,12 @@ const QUESTION_SETS = {
   ]
 }
 
+// Load any custom question sets created by teachers (saved in localStorage)
+const loadCustomSets = () => {
+  try { const raw = localStorage.getItem('customQuestionSets'); return raw ? JSON.parse(raw) : {} } catch { return {} }
+}
+const MERGED_QUESTION_SETS = { ...QUESTION_SETS, ...loadCustomSets() }
+
 export default function AbuseReport({ onFinish = () => {}, onCancel = () => {} }) {
   const [step, setStep] = useState(0)
   const [type, setType] = useState('Physical')
@@ -64,7 +70,7 @@ export default function AbuseReport({ onFinish = () => {}, onCancel = () => {} }
   const [error, setError] = useState('')
 
   const steps = ['choose']
-  const questionSet = QUESTION_SETS[type] || []
+  const questionSet = MERGED_QUESTION_SETS[type] || []
   // flatten steps: choose -> each question index -> review
   const totalSteps = 1 + questionSet.length + 1
 
@@ -120,7 +126,7 @@ export default function AbuseReport({ onFinish = () => {}, onCancel = () => {} }
         <div className="survey-step">
           <h3 className="survey-title">Select type of abuse</h3>
           <select value={type} onChange={handleChoice} className="survey-select">
-            {Object.keys(QUESTION_SETS).map(k => <option key={k} value={k}>{k}</option>)}
+            {Object.keys(MERGED_QUESTION_SETS).map(k => <option key={k} value={k}>{k}</option>)}
           </select>
           <div className="survey-actions">
             <button type="button" className="survey-next" onClick={() => { setStep(1); setError('') }}>Start</button>
