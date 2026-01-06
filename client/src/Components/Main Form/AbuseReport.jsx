@@ -1,76 +1,69 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import './MainForm.css'
 
-// A small, local survey/quiz flow for abuse reporting.
-// - Starts with a selection of abuse type
-// - Presents a short sequence of questions based on that choice
-// - Hides the initial "report" button while the survey runs
-// - Calls `onFinish(data)` with collected answers when submitted
+// Survey flow loads question sets from backend only. No local fallback.
 
-const QUESTION_SETS = {
-  Physical: [
-    { id: 'physical_when', q: 'When did this happen?', type: 'text', required: true },
-    { id: 'physical_where', q: 'Where did it happen (room/place)?', type: 'text', required: true },
-    { id: 'physical_who', q: 'Who was involved? (names, roles, relation to you)', type: 'text', required: true },
-    { id: 'physical_description', q: 'Describe what happened in your own words', type: 'text', required: true },
-    { id: 'physical_injury', q: 'Were you physically injured?', type: 'choice', options: ['Yes','No'], required: true },
-    { id: 'physical_medical', q: 'Did you seek medical attention?', type: 'choice', options: ['Yes','No'], required: true },
-    { id: 'physical_witnesses', q: 'Were there any witnesses? If so, who?', type: 'text', required: false },
-    { id: 'physical_evidence', q: 'Do you have any evidence (photos, messages)?', type: 'choice', options: ['Yes','No'], required: false },
-    { id: 'physical_repeat', q: 'Has this happened before?', type: 'choice', options: ['Yes','No','Not sure'], required: true },
-    { id: 'physical_perpetrator', q: 'Would you want to tell us who did it? (optional — you may skip)', type: 'text', required: false },
-  ],
-  Verbal: [
-    { id: 'verbal_what', q: 'What was said or done (quote if possible)?', type: 'text', required: true },
-    { id: 'verbal_who', q: 'Who said it? (name/role)', type: 'text', required: true },
-    { id: 'verbal_where', q: 'Where did it happen?', type: 'text', required: true },
-    { id: 'verbal_frequency', q: 'How often does this happen?', type: 'choice', options: ['Once','Occasionally','Frequently'], required: true },
-    { id: 'verbal_effect', q: 'How did it make you feel or affect you?', type: 'text', required: true },
-    { id: 'verbal_witnesses', q: 'Were there witnesses or others who heard it?', type: 'text', required: false },
-    { id: 'verbal_perpetrator', q: 'Would you want to tell us who did it? (optional — you may skip)', type: 'text', required: false },
-  ],
-  Sexual: [
-    { id: 'sexual_when', q: 'When did this occur (date/time)?', type: 'text', required: true },
-    { id: 'sexual_where', q: 'Where did it happen?', type: 'text', required: true },
-    { id: 'sexual_description', q: 'Describe what happened (as much as you are comfortable sharing)', type: 'text', required: true },
-    { id: 'sexual_consent', q: 'Was there consent?', type: 'choice', options: ['Yes','No','Not sure'], required: true },
-    { id: 'sexual_force', q: 'Was there any use of force or threats?', type: 'choice', options: ['Yes','No'], required: true },
-    { id: 'sexual_injury', q: 'Were there injuries?', type: 'choice', options: ['Yes','No'], required: false },
-    { id: 'sexual_medical', q: 'Did you seek medical support?', type: 'choice', options: ['Yes','No'], required: false },
-    { id: 'sexual_reported_before', q: 'Have you reported this to anyone else before?', type: 'choice', options: ['Yes','No'], required: false },
-    { id: 'sexual_perpetrator', q: 'Would you want to tell us who did it? (optional — you may skip)', type: 'text', required: false },
-  ],
-  Bullying: [
-    { id: 'bully_who', q: 'Who is bullying you? (names/roles)', type: 'text', required: true },
-    { id: 'bully_where', q: 'Where does it happen (classroom, online, etc.)?', type: 'text', required: true },
-    { id: 'bully_frequency', q: 'How often does it happen?', type: 'choice', options: ['Once','Occasionally','Frequently'], required: true },
-    { id: 'bully_examples', q: 'Provide short examples (one per line)', type: 'text', required: true },
-    { id: 'bully_effect', q: 'How has this affected your school life or wellbeing?', type: 'text', required: true },
-    { id: 'bully_support', q: 'Have you told anyone or asked for help?', type: 'choice', options: ['Yes','No'], required: false },
-    { id: 'bully_perpetrator', q: 'Would you want to tell us who did it? (optional — you may skip)', type: 'text', required: false },
-  ],
-  Other: [
-    { id: 'other_describe', q: 'Please describe the issue in as much detail as you can', type: 'text', required: true },
-    { id: 'other_when', q: 'When did it happen?', type: 'text', required: false },
-    { id: 'other_where', q: 'Where did it happen?', type: 'text', required: false },
-    { id: 'other_perpetrator', q: 'Would you want to tell us who did it? (optional — you may skip)', type: 'text', required: false },
-  ]
+const getApiBase = () => {
+  const stored = localStorage.getItem('apiBase')
+  return stored && stored.trim() ? stored.trim() : 'http://127.0.0.1:8000'
 }
-
-// Load any custom question sets created by teachers (saved in localStorage)
-const loadCustomSets = () => {
-  try { const raw = localStorage.getItem('customQuestionSets'); return raw ? JSON.parse(raw) : {} } catch { return {} }
-}
-const MERGED_QUESTION_SETS = { ...QUESTION_SETS, ...loadCustomSets() }
 
 export default function AbuseReport({ onFinish = () => {}, onCancel = () => {} }) {
   const [step, setStep] = useState(0)
   const [type, setType] = useState('Physical')
   const [answers, setAnswers] = useState({})
   const [error, setError] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [questionSetsMap, setQuestionSetsMap] = useState({})
+  const [loadMsg, setLoadMsg] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState('')
+
+  // Load question sets from backend (requires auth token)
+  useEffect(() => {
+    let cancelled = false
+    const run = async () => {
+      try {
+        const base = getApiBase()
+        // Support both keys to match login storage
+        const token = localStorage.getItem('authToken') || localStorage.getItem('token')
+        const res = await fetch(`${base}/api/question-sets`, {
+          method: 'GET',
+          headers: {
+            Accept: 'application/json',
+            Authorization: token ? `Bearer ${token}` : undefined,
+          },
+        })
+        if (!res.ok) throw new Error(`Failed to load question sets (${res.status})`)
+        const data = await res.json()
+        // transform list to map: key -> schema
+        const map = {}
+        for (const item of data) {
+          if (item && item.key && Array.isArray(item.schema)) {
+            map[item.key] = item.schema
+          }
+        }
+        if (!cancelled) {
+          setQuestionSetsMap(map)
+          const keys = Object.keys(map)
+          if (keys.length && !map[type]) setType(keys[0])
+          setLoading(false)
+          setLoadMsg('')
+        }
+      } catch (e) {
+        if (!cancelled) {
+          setQuestionSetsMap({})
+          setLoading(false)
+          setLoadMsg('Unable to load question sets. Please log in and ensure the server is running.')
+        }
+      }
+    }
+    run()
+    return () => { cancelled = true }
+  }, [])
 
   const steps = ['choose']
-  const questionSet = MERGED_QUESTION_SETS[type] || []
+  const questionSet = questionSetsMap[type] || []
   // flatten steps: choose -> each question index -> review
   const totalSteps = 1 + questionSet.length + 1
 
@@ -115,21 +108,59 @@ export default function AbuseReport({ onFinish = () => {}, onCancel = () => {} }
       setStep(1 + idx)
       return
     }
-    const payload = { type, answers }
-    console.log('Abuse report submitted', payload)
-    onFinish(payload)
+    const run = async () => {
+      try {
+        setSubmitting(true)
+        setSubmitError('')
+        const base = getApiBase()
+        const token = localStorage.getItem('authToken') || localStorage.getItem('token')
+        const payload = { type, answers }
+        const res = await fetch(`${base}/api/reports`, {
+          method: 'POST',
+          headers: {
+            Accept: 'application/json',
+            'Content-Type': 'application/json',
+            Authorization: token ? `Bearer ${token}` : undefined,
+          },
+          body: JSON.stringify(payload),
+        })
+        if (!res.ok) {
+          let msg = `Failed to submit report (${res.status})`
+          try {
+            const j = await res.json()
+            if (j && j.message) msg = j.message
+          } catch {}
+          throw new Error(msg)
+        }
+        const data = await res.json()
+        onFinish(data)
+      } catch (e) {
+        setSubmitError(e.message || 'Submission failed')
+      } finally {
+        setSubmitting(false)
+      }
+    }
+    run()
   }
 
   return (
     <div className="survey-container">
+      {loading && (
+        <div className="survey-step">
+          <h3 className="survey-title">Loading question sets…</h3>
+          {loadMsg && <div className="survey-error" style={{color:'#666'}}>{loadMsg}</div>}
+        </div>
+      )}
+      {!loading && (
+        <>
       {step === 0 && (
         <div className="survey-step">
           <h3 className="survey-title">Select type of abuse</h3>
-          <select value={type} onChange={handleChoice} className="survey-select">
-            {Object.keys(MERGED_QUESTION_SETS).map(k => <option key={k} value={k}>{k}</option>)}
+          <select value={type} onChange={handleChoice} className="survey-select" disabled={Object.keys(questionSetsMap).length === 0}>
+            {Object.keys(questionSetsMap).map(k => <option key={k} value={k}>{k}</option>)}
           </select>
           <div className="survey-actions">
-            <button type="button" className="survey-next" onClick={() => { setStep(1); setError('') }}>Start</button>
+            <button type="button" className="survey-next" onClick={() => { setStep(1); setError('') }} disabled={!(questionSetsMap[type] && questionSetsMap[type].length)}>Start</button>
             <button type="button" className="survey-cancel" onClick={onCancel}>Cancel</button>
           </div>
         </div>
@@ -170,16 +201,28 @@ export default function AbuseReport({ onFinish = () => {}, onCancel = () => {} }
         <div className="survey-step">
           <h3 className="survey-title">Review & Submit</h3>
           <div className="survey-review">
-            <div><strong>Type:</strong> {type}</div>
-            {Object.entries(answers).map(([k,v]) => (
-              <div key={k}><strong>{k}:</strong> {String(v)}</div>
-            ))}
+            <div style={{marginBottom:'0.5rem'}}><strong>Type:</strong> {type}</div>
+            {questionSet.length > 0 ? (
+              questionSet.map((q, idx) => (
+                <div key={q.id || idx} style={{marginBottom:'0.5rem'}}>
+                  <div style={{fontWeight:600}}>{q.q || ''}</div>
+                  <div>{answers && (q.id in answers) ? String(answers[q.id]) : '—'}</div>
+                </div>
+              ))
+            ) : (
+              Object.entries(answers).map(([k,v]) => (
+                <div key={k} style={{marginBottom:'0.5rem'}}><div style={{fontWeight:600}}>{k}</div><div>{String(v)}</div></div>
+              ))
+            )}
           </div>
           <div className="survey-actions">
-            <button type="button" className="survey-back" onClick={back}>Back</button>
-            <button type="button" className="survey-submit" onClick={handleSubmit}>Submit Report</button>
+            <button type="button" className="survey-back" onClick={back} disabled={submitting}>Back</button>
+            <button type="button" className="survey-submit" onClick={handleSubmit} disabled={submitting}>{submitting ? 'Submitting…' : 'Submit Report'}</button>
           </div>
+          {submitError && <div className="survey-error" style={{marginTop:'0.5rem'}}>{submitError}</div>}
         </div>
+      )}
+        </>
       )}
     </div>
   )

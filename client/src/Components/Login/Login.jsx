@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { MdOutlineLogin } from "react-icons/md";
 import logo from "./media/logo.png";
 import MainForm from "../Main Form/MainForm";
@@ -9,12 +9,45 @@ const Login = () => {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [showMain, setShowMain] = useState(false);
+  const [role, setRole] = useState(null);
+
+  // Restore session on refresh if tokens exist
+  useEffect(() => {
+    try {
+      const token = localStorage.getItem('authToken');
+      const savedRole = localStorage.getItem('userRole');
+      if (token && savedRole) {
+        setRole(savedRole);
+        setShowMain(true);
+      }
+    } catch (_) {
+      // ignore
+    }
+  }, []);
 
   // For now the login button simply reveals the MainForm (both panels)
-  const handleShowMain = (e) => {
+  const handleShowMain = async (e) => {
     e.preventDefault();
     setError("");
-    setShowMain(true);
+    try {
+      const res = await fetch('http://127.0.0.1:8000/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        body: JSON.stringify({ email: username, password })
+      });
+      if (!res.ok) {
+        const msg = await res.json().catch(() => ({}));
+        throw new Error(msg.message || 'Login failed');
+      }
+      const data = await res.json();
+      localStorage.setItem('authToken', data.token);
+      localStorage.setItem('userEmail', data.user?.email || username);
+      localStorage.setItem('userRole', data.user?.role || 'student');
+      setRole(data.user?.role || 'student');
+      setShowMain(true);
+    } catch (err) {
+      setError(err.message || 'Unable to login');
+    }
   };
 
   return (
@@ -63,7 +96,7 @@ const Login = () => {
           </div>
         ) : (
           <div className="login-wrapper">
-            <MainForm role="teacher" header={{ logo, title: 'F. Bangoy National High School\nAbuse Report Form' }} onLogout={() => setShowMain(false)} />
+            <MainForm role={role || 'student'} header={{ logo, title: 'F. Bangoy National High School\nAbuse Report Form' }} onLogout={() => { localStorage.removeItem('authToken'); localStorage.removeItem('userRole'); setShowMain(false); setRole(null); }} />
           </div>
         )}
       </div>

@@ -15,6 +15,25 @@
   box-sizing: border-box;
 }
 
+/* Student Management form */
+.student-form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.8rem;
+}
+.student-form-grid > div label {
+  display: block;
+  margin-bottom: 0.25rem;
+  font-weight: 600;
+}
+.student-form-grid > div input {
+  width: 100%;
+}
+.status-line {
+  margin-top: 0.6rem;
+  color: #374151;
+}
+
 html, body {
   margin: 0;
   padding: 0;
@@ -376,6 +395,14 @@ html, body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* Allow full question text to wrap across lines */
+.cell-question {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  max-width: none;
 }
 
 /* ─────────────────────────────────────────────────────────────────────────────
