@@ -17,17 +17,13 @@ export default function Messages({ onClose = () => {} }) {
   const [text, setText] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [searchQuery, setSearchQuery] = useState('')
   const inputRef = useRef(null)
   const listRef = useRef(null)
-  
-  // Compose new message
-  const [showCompose, setShowCompose] = useState(false)
-  const [teachers, setTeachers] = useState([])
-  const [compose, setCompose] = useState({ recipientId: null, subject: '', body: '' })
 
-  const fetchThreads = async () => {
+  const fetchThreads = async (silent = false) => {
     try {
-      setLoading(true)
+      if (!silent) setLoading(true)
       setError('')
       const token = localStorage.getItem('authToken') || localStorage.getItem('token')
       if (!token) { setError('Not authenticated'); return }
@@ -39,68 +35,15 @@ export default function Messages({ onClose = () => {} }) {
       const data = await res.json()
       setThreads(Array.isArray(data?.data) ? data.data : (Array.isArray(data) ? data : []))
     } catch (e) {
-      setError(e.message || 'Error loading conversations')
+      if (!silent) setError(e.message || 'Error loading conversations')
     } finally {
-      setLoading(false)
+      if (!silent) setLoading(false)
     }
   }
 
-  const fetchTeachers = async () => {
+  const fetchMessages = async (threadId, silent = false) => {
     try {
-      const token = localStorage.getItem('authToken') || localStorage.getItem('token')
-      if (!token) return
-      const base = getApiBase()
-      const res = await fetch(`${base}/api/teachers`, {
-        headers: { Accept: 'application/json', Authorization: `Bearer ${token}` }
-      })
-      if (!res.ok) throw new Error('Failed to load teachers')
-      const data = await res.json()
-      setTeachers(Array.isArray(data?.data) ? data.data : (Array.isArray(data) ? data : []))
-    } catch (e) {
-      console.error('Error loading teachers:', e)
-    }
-  }
-
-  const startCompose = () => {
-    setCompose({ recipientId: null, subject: '', body: '' })
-    setShowCompose(true)
-    if (teachers.length === 0) fetchTeachers()
-  }
-
-  const sendNewMessage = async () => {
-    if (!compose.recipientId || !compose.subject || !compose.body) {
-      alert('Please fill in all fields')
-      return
-    }
-    try {
-      const token = localStorage.getItem('authToken') || localStorage.getItem('token')
-      const base = getApiBase()
-      // Create new thread
-      const threadRes = await fetch(`${base}/api/threads`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Accept:'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ subject: compose.subject, participant_ids: [compose.recipientId] })
-      })
-      if (!threadRes.ok) throw new Error('Failed to create conversation')
-      const thread = await threadRes.json()
-      // Send first message
-      const msgRes = await fetch(`${base}/api/threads/${thread.id}/messages`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Accept:'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ body: compose.body })
-      })
-      if (!msgRes.ok) throw new Error('Failed to send message')
-      setCompose({ recipientId: null, subject: '', body: '' })
-      setShowCompose(false)
-      await fetchThreads()
-    } catch (e) {
-      alert(e.message || 'Error sending message')
-    }
-  }
-
-  const fetchMessages = async (threadId) => {
-    try {
-      setLoading(true)
+      if (!silent) setLoading(true)
       const token = localStorage.getItem('authToken') || localStorage.getItem('token')
       const base = getApiBase()
       const res = await fetch(`${base}/api/threads/${threadId}/messages`, {
@@ -108,21 +51,43 @@ export default function Messages({ onClose = () => {} }) {
       })
       if (!res.ok) throw new Error('Failed to load messages')
       const data = await res.json()
-      setMessages(Array.isArray(data?.data) ? data.data : (Array.isArray(data) ? data : []))
+      const fetchedMessages = Array.isArray(data?.data) ? data.data : (Array.isArray(data) ? data : [])
+      
+      // Preserve optimistic messages (temporary ones being sent)
+      setMessages(prev => {
+        const optimisticMessages = prev.filter(m => m.id && m.id.toString().startsWith('temp-'))
+        // Merge: keep optimistic messages, add fetched messages that aren't duplicates
+        const fetchedIds = new Set(fetchedMessages.map(m => m.id))
+        const merged = [...fetchedMessages, ...optimisticMessages.filter(om => !fetchedIds.has(om.id))]
+        return merged
+      })
     } catch (e) {
-      setError(e.message || 'Error loading messages')
+      if (!silent) setError(e.message || 'Error loading messages')
     } finally {
-      setLoading(false)
+      if (!silent) setLoading(false)
     }
   }
 
   useEffect(() => {
     fetchThreads()
+    // Poll for new messages every 10 seconds
+    const interval = setInterval(() => {
+      fetchThreads(true) // silent mode
+    }, 10000)
+    return () => clearInterval(interval)
   }, [])
 
   useEffect(() => {
     if (selectedThread) {
-      fetchMessages(selectedThread.id)
+      fetchMessages(selectedThread.id, true) // silent on initial load
+      // Poll for new messages in thread every 5 seconds
+      const interval = setInterval(() => {
+        fetchMessages(selectedThread.id, true) // silent mode
+      }, 5000)
+      return () => clearInterval(interval)
+    } else {
+      // Clear messages when no thread selected
+      setMessages([])
     }
   }, [selectedThread])
 
@@ -133,6 +98,31 @@ export default function Messages({ onClose = () => {} }) {
 
   const send = async () => {
     if (!text || text.trim() === '' || !selectedThread) return
+    
+    const messageText = text.trim()
+    const currentUser = JSON.parse(localStorage.getItem('user') || '{}')
+    const currentUserId = currentUser.id || currentUser.user_id || currentUser.userId
+    
+    // Optimistic UI: Add message immediately
+    const optimisticMessage = {
+      id: `temp-${Date.now()}`,
+      body: messageText,
+      from_user_id: currentUserId,
+      from: {
+        id: currentUserId,
+        first_name: currentUser.first_name || currentUser.name || 'You',
+        last_name: currentUser.last_name || ''
+      },
+      created_at: new Date().toISOString(),
+      sending: true
+    }
+    
+    setMessages(prev => [...prev, optimisticMessage])
+    setText('')
+    if (inputRef.current) {
+      inputRef.current.style.height = 'auto'
+    }
+    
     try {
       const token = localStorage.getItem('authToken') || localStorage.getItem('token')
       const base = getApiBase()
@@ -143,15 +133,22 @@ export default function Messages({ onClose = () => {} }) {
           Accept: 'application/json',
           Authorization: `Bearer ${token}`
         },
-        body: JSON.stringify({ body: text.trim() })
+        body: JSON.stringify({ body: messageText })
       })
       if (!res.ok) throw new Error('Failed to send message')
-      setText('')
-      if (inputRef.current) {
-        inputRef.current.style.height = 'auto'
-      }
-      await fetchMessages(selectedThread.id)
+      
+      const data = await res.json()
+      const newMessage = data?.data || data
+      
+      // Replace optimistic message with real one from server
+      setMessages(prev => prev.map(m => 
+        m.id === optimisticMessage.id ? newMessage : m
+      ))
+      // Refresh threads list to update conversation preview
+      fetchThreads(true)
     } catch (e) {
+      // Remove optimistic message on error
+      setMessages(prev => prev.filter(m => m.id !== optimisticMessage.id))
       alert('Error sending message: ' + e.message)
     }
   }
@@ -166,7 +163,10 @@ export default function Messages({ onClose = () => {} }) {
   const getCurrentUserId = () => {
     try {
       const user = JSON.parse(localStorage.getItem('user') || '{}')
-      return user.id
+      console.log('Current user from localStorage:', user)
+      // Try different possible ID fields
+      const userId = user.id || user.user_id || user.userId
+      return userId ? parseInt(userId) : null
     } catch {
       return null
     }
@@ -174,91 +174,108 @@ export default function Messages({ onClose = () => {} }) {
 
   const currentUserId = getCurrentUserId()
 
+  // Filter threads based on search query
+  const filteredThreads = threads.filter(t => {
+    if (!searchQuery.trim()) return true
+    
+    const query = searchQuery.toLowerCase()
+    const currentUser = JSON.parse(localStorage.getItem('user') || '{}')
+    const currentUserId = currentUser.id ? parseInt(currentUser.id) : null
+    
+    // Search in participants names
+    const participantNames = Array.isArray(t.participants)
+      ? t.participants
+          .filter(p => p.id !== currentUserId)
+          .map(p => `${p.first_name||''} ${p.last_name||''}`.toLowerCase())
+          .join(' ')
+      : ''
+    
+    // Search in subject
+    const subject = (t.subject || '').toLowerCase()
+    
+    // Search in last message
+    const lastMsg = Array.isArray(t.messages) && t.messages.length > 0 
+      ? (t.messages[0].body || '').toLowerCase() 
+      : ''
+    
+    return participantNames.includes(query) || subject.includes(query) || lastMsg.includes(query)
+  })
+
   return (
     <div className="messages-container">
       <div className="messages-header">
         <div className="messages-title">Messages</div>
         <div className="messages-actions">
-          <button className="btn-primary" onClick={startCompose} style={{marginRight:'0.5rem'}}>New Message</button>
           <button className="btn-light" onClick={onClose}>Close</button>
         </div>
       </div>
 
-      {showCompose ? (
-        <div className="compose-view" style={{padding:'1.5rem'}}>
-          <h3 style={{marginBottom:'1rem'}}>New Message</h3>
-          <div style={{marginBottom:'1rem'}}>
-            <label style={{display:'block', marginBottom:'0.25rem', fontWeight:'500'}}>To (Teacher/Counselor)</label>
-            <select 
-              value={compose.recipientId||''} 
-              onChange={e => setCompose(c=>({...c, recipientId: parseInt(e.target.value)}))}
-              style={{width:'100%', padding:'0.5rem', border:'1px solid #d1d5db', borderRadius:'0.375rem'}}
-            >
-              <option value="">Select a teacher or counselor</option>
-              {teachers.map(t => (
-                <option key={t.id} value={t.id}>
-                  {t.first_name} {t.last_name} {t.email ? `(${t.email})` : ''}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div style={{marginBottom:'1rem'}}>
-            <label style={{display:'block', marginBottom:'0.25rem', fontWeight:'500'}}>Subject</label>
-            <input 
-              value={compose.subject} 
-              onChange={e => setCompose(c=>({...c, subject: e.target.value}))}
-              placeholder="Enter subject"
-              style={{width:'100%', padding:'0.5rem', border:'1px solid #d1d5db', borderRadius:'0.375rem'}}
-            />
-          </div>
-          <div style={{marginBottom:'1rem'}}>
-            <label style={{display:'block', marginBottom:'0.25rem', fontWeight:'500'}}>Message</label>
-            <textarea 
-              value={compose.body} 
-              onChange={e => setCompose(c=>({...c, body: e.target.value}))}
-              placeholder="Type your message here..."
-              rows={8}
-              style={{width:'100%', padding:'0.5rem', border:'1px solid #d1d5db', borderRadius:'0.375rem'}}
-            />
-          </div>
-          <div style={{display:'flex', gap:'0.5rem'}}>
-            <button className="btn-primary" onClick={sendNewMessage}>Send</button>
-            <button className="btn-light" onClick={() => {
-              setShowCompose(false)
-              setCompose({ recipientId: null, subject: '', body: '' })
-            }}>Cancel</button>
-          </div>
-        </div>
-      ) : !selectedThread ? (
+      {!selectedThread ? (
         <div className="threads-list">
+          <div style={{padding:'1rem', borderBottom:'1px solid #e5e7eb'}}>
+            <input 
+              className="msg-search" 
+              placeholder="Search conversations..." 
+              value={searchQuery} 
+              onChange={e => setSearchQuery(e.target.value)}
+              style={{width:'100%', padding:'0.5rem 0.65rem', border:'1px solid #e5e7eb', borderRadius:'6px', fontSize:'0.9rem'}}
+            />
+          </div>
           {loading && <div className="empty">Loading conversations...</div>}
           {error && <div className="empty" style={{color:'#b91c1c'}}>{error}</div>}
-          {!loading && !error && threads.length === 0 && (
-            <div className="empty">No conversations yet. Contact your teacher or counselor to start a conversation.</div>
+          {!loading && !error && filteredThreads.length === 0 && threads.length > 0 && (
+            <div className="empty">No conversations match your search.</div>
           )}
-          {!loading && threads.map(t => {
+          {!loading && !error && threads.length === 0 && (
+            <div className="empty">No conversations yet. Your teacher or counselor will contact you when needed.</div>
+          )}
+          {!loading && filteredThreads.map(t => {
+            const currentUser = JSON.parse(localStorage.getItem('user') || '{}')
+            const currentUserId = currentUser.id ? parseInt(currentUser.id) : null
             const participants = Array.isArray(t.participants) 
-              ? t.participants.map(p => `${p.first_name||''} ${p.last_name||''}`).join(', ') 
+              ? t.participants
+                  .filter(p => p.id !== currentUserId)
+                  .map(p => `${p.first_name||''} ${p.last_name||''}`).join(', ') 
               : ''
             const lastMsg = Array.isArray(t.messages) && t.messages.length > 0 ? t.messages[0].body : ''
+            const hasUnread = t.unread_count && t.unread_count > 0
             return (
-              <div key={t.id} className="thread-item" onClick={() => setSelectedThread(t)} style={{padding:'1rem', borderBottom:'1px solid #e5e7eb', cursor:'pointer'}}>
-                <div style={{fontWeight:'600', marginBottom:'0.25rem'}}>{t.subject}</div>
-                <div style={{fontSize:'0.875rem', color:'#6b7280', marginBottom:'0.25rem'}}>{participants}</div>
-                {lastMsg && <div style={{fontSize:'0.875rem', color:'#9ca3af'}}>{lastMsg.slice(0, 60)}{lastMsg.length > 60 ? '...' : ''}</div>}
+              <div key={t.id} className={`thread-item ${hasUnread ? 'has-unread' : ''}`} onClick={() => setSelectedThread(t)}>
+                <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'0.25rem'}}>
+                  <div style={{fontWeight: hasUnread ? '700' : '600'}}>{participants || 'Unknown'}</div>
+                  {hasUnread && (
+                    <span style={{
+                      backgroundColor: '#3b82f6',
+                      color: 'white',
+                      fontSize: '0.75rem',
+                      fontWeight: '600',
+                      padding: '0.125rem 0.5rem',
+                      borderRadius: '9999px',
+                      minWidth: '1.25rem',
+                      textAlign: 'center'
+                    }}>
+                      {t.unread_count}
+                    </span>
+                  )}
+                </div>
+                <div style={{fontSize:'0.875rem', color:'#6b7280', marginBottom:'0.25rem'}}>{t.subject}</div>
+                {lastMsg && <div style={{fontSize:'0.875rem', color: hasUnread ? '#374151' : '#9ca3af', fontWeight: hasUnread ? '500' : '400'}}>{lastMsg.slice(0, 60)}{lastMsg.length > 60 ? '...' : ''}</div>}
               </div>
             )
           })}
         </div>
       ) : (
         <>
-          <div className="conversation-header" style={{padding:'1rem', borderBottom:'1px solid #e5e7eb', background:'#f9fafb'}}>
-            <button className="btn-light" onClick={() => setSelectedThread(null)} style={{marginBottom:'0.5rem'}}>← Back to conversations</button>
-            <div style={{fontWeight:'600'}}>{selectedThread.subject}</div>
-            <div style={{fontSize:'0.875rem', color:'#6b7280'}}>
-              {Array.isArray(selectedThread.participants) 
-                ? selectedThread.participants.map(p => `${p.first_name||''} ${p.last_name||''}`).join(', ')
-                : ''}
+          <div className="conversation-header">
+            <div style={{display:'flex', alignItems:'center', gap:'0.75rem'}}>
+              <button className="btn-light" onClick={() => { setSelectedThread(null); fetchThreads(true); }}>← Back</button>
+              <div style={{fontWeight:'600', fontSize:'1.1rem'}}>
+                {Array.isArray(selectedThread.participants) 
+                  ? selectedThread.participants
+                      .filter(p => p.id !== currentUserId)
+                      .map(p => `${p.first_name||''} ${p.last_name||''}`).join(', ')
+                  : ''}
+              </div>
             </div>
           </div>
 
@@ -266,12 +283,23 @@ export default function Messages({ onClose = () => {} }) {
             {loading && <div className="empty">Loading messages...</div>}
             {!loading && messages.map(m => {
               const from = m.from ? `${m.from.first_name||''} ${m.from.last_name||''}`.trim() : 'Unknown'
-              const isOutgoing = m.from_user_id === currentUserId
+              const isOutgoing = currentUserId && m.from_user_id && parseInt(m.from_user_id) === currentUserId
+              const isUnread = !isOutgoing && m.is_read === false
+              console.log('Message:', { 
+                body: m.body, 
+                from_user_id: m.from_user_id, 
+                from_id: m.from?.id,
+                currentUserId, 
+                isOutgoing,
+                is_read: m.is_read,
+                isUnread,
+                message: m
+              })
               return (
-                <div key={m.id} className={`message-item ${isOutgoing ? 'outgoing' : 'incoming'}`}>
-                  <div className="bubble">
-                    {!isOutgoing && <div style={{fontWeight:'600', fontSize:'0.75rem', marginBottom:'0.25rem', color:'#4b5563'}}>{from}</div>}
-                    {m.body}
+                <div key={m.id} className={`message-item ${isOutgoing ? 'outgoing' : 'incoming'} ${isUnread ? 'unread' : ''}`}>
+                  <div className="bubble" style={isUnread ? {backgroundColor: '#dbeafe', borderLeft: '3px solid #3b82f6'} : {}}>
+                    <div style={{fontWeight:'600', fontSize:'0.7rem', marginBottom:'0.25rem', color: isOutgoing ? '#e0e7ff' : '#4b5563'}}>{from}</div>
+                    <div>{m.body}</div>
                   </div>
                   <div className="msg-time">{m.created_at ? new Date(m.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : ''}</div>
                 </div>

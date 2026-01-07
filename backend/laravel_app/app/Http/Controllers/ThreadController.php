@@ -13,8 +13,23 @@ class ThreadController extends Controller
         $user = $request->user();
         $threads = Thread::whereHas('participants', function($q) use ($user) {
             $q->where('users.id', $user->id);
-        })->with(['participants:id,first_name,last_name', 'messages' => function($q){ $q->latest()->limit(1); }])->orderByDesc('updated_at')->paginate(20);
-        return response()->json($threads);
+        })->with(['participants:id,first_name,last_name', 'messages' => function($q){ $q->latest()->limit(1); }])
+        ->orderByDesc('updated_at')
+        ->get()
+        ->map(function($thread) use ($user) {
+            // Count unread messages in this thread for the current user
+            $unreadCount = \App\Models\Message::where('thread_id', $thread->id)
+                ->where('from_user_id', '!=', $user->id) // Don't count own messages
+                ->whereDoesntHave('reads', function($q) use ($user) {
+                    $q->where('user_id', $user->id);
+                })
+                ->count();
+            
+            $thread->unread_count = $unreadCount;
+            return $thread;
+        });
+        
+        return response()->json(['data' => $threads]);
     }
 
     public function store(Request $request)

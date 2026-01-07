@@ -12,23 +12,23 @@ class DemoSeeder extends Seeder
     public function run(): void
     {
         $teacher = User::firstOrCreate(
-            ['email' => 'teacher@example.com'],
+            ['email' => 'johnronan@teacher.com'],
             [
-                'name' => 'Tina Teacher',
-                'first_name' => 'Tina',
-                'last_name' => 'Teacher',
+                'name' => 'John Ronan',
+                'first_name' => 'John',
+                'last_name' => 'Ronan',
                 'role' => 'teacher',
                 'password' => Hash::make('password'),
             ]
         );
 
-        $student = User::firstOrCreate(
-            ['email' => 'student@example.com'],
+        $teacher2 = User::firstOrCreate(
+            ['email' => 'marytaylor@teacher.com'],
             [
-                'name' => 'Sam Student',
-                'first_name' => 'Sam',
-                'last_name' => 'Student',
-                'role' => 'student',
+                'name' => 'Mary Taylor',
+                'first_name' => 'Mary',
+                'last_name' => 'Taylor',
+                'role' => 'teacher',
                 'password' => Hash::make('password'),
             ]
         );

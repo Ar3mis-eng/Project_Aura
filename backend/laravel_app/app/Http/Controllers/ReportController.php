@@ -10,9 +10,19 @@ class ReportController extends Controller
     public function index(Request $request)
     {
         $user = $request->user();
-        if (($user->role ?? 'student') === 'teacher' || ($user->role ?? 'student') === 'admin') {
+        if (($user->role ?? 'student') === 'teacher') {
+            // Teachers can only see reports from students they created
+            $reports = Report::with('student:id,first_name,last_name,email,created_by')
+                ->whereHas('student', function($query) use ($user) {
+                    $query->where('created_by', $user->id);
+                })
+                ->orderByDesc('submitted_at')
+                ->paginate(20);
+        } elseif (($user->role ?? 'student') === 'admin') {
+            // Admins can see all reports
             $reports = Report::with('student:id,first_name,last_name,email')->orderByDesc('submitted_at')->paginate(20);
         } else {
+            // Students can only see their own reports
             $reports = Report::where('student_id', $user->id)->orderByDesc('submitted_at')->paginate(20);
         }
         return response()->json($reports);

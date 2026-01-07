@@ -8,6 +8,7 @@ use App\Http\Controllers\MessageController;
 use App\Http\Controllers\QuestionSetController;
 use App\Http\Controllers\StudentController;
 use App\Http\Controllers\TeacherController;
+use App\Http\Controllers\AnalyticsController;
 
 Route::prefix('auth')->group(function () {
     Route::post('/login', [AuthController::class, 'login']);
@@ -42,7 +43,11 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/students', [StudentController::class, 'index']);
     Route::post('/students', [StudentController::class, 'store']);
     Route::put('/students/{id}', [StudentController::class, 'update']);
+    Route::delete('/students/{id}', [StudentController::class, 'destroy']);
 
     // Teachers list (for students to message)
     Route::get('/teachers', [TeacherController::class, 'index']);
+
+    // Analytics (teacher/admin only)
+    Route::get('/analytics', [AnalyticsController::class, 'index']);
 });

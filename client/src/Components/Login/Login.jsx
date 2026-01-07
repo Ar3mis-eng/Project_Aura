@@ -41,6 +41,7 @@ const Login = () => {
       }
       const data = await res.json();
       localStorage.setItem('authToken', data.token);
+      localStorage.setItem('user', JSON.stringify(data.user || {}));
       localStorage.setItem('userEmail', data.user?.email || username);
       localStorage.setItem('userRole', data.user?.role || 'student');
       setRole(data.user?.role || 'student');
@@ -96,7 +97,16 @@ const Login = () => {
           </div>
         ) : (
           <div className="login-wrapper">
-            <MainForm role={role || 'student'} header={{ logo, title: 'F. Bangoy National High School\nAbuse Report Form' }} onLogout={() => { localStorage.removeItem('authToken'); localStorage.removeItem('userRole'); setShowMain(false); setRole(null); }} />
+            <MainForm role={role || 'student'} header={{ logo, title: 'F. Bangoy National High School\nAbuse Report Form' }} onLogout={() => { 
+              localStorage.removeItem('authToken'); 
+              localStorage.removeItem('userRole'); 
+              setShowMain(false); 
+              setRole(null);
+              // Reset login form fields
+              setUsername('');
+              setPassword('');
+              setError('');
+            }} />
           </div>
         )}
       </div>

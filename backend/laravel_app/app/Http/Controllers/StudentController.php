@@ -15,7 +15,16 @@ class StudentController extends Controller
         if (!in_array(($user->role ?? 'student'), ['teacher','admin'])) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
-        $students = User::where('role', 'student')
+        
+        $query = User::where('role', 'student');
+        
+        // Teachers can only see students they created
+        if ($user->role === 'teacher') {
+            $query->where('created_by', $user->id);
+        }
+        // Admins can see all students
+        
+        $students = $query
             ->select('id','first_name','middle_name','last_name','age','birthday','contact_number','address','email','created_at')
             ->orderByDesc('created_at')
             ->paginate(20);
@@ -49,6 +58,7 @@ class StudentController extends Controller
             'email' => $data['email'],
             'password' => Hash::make($data['password']),
             'role' => 'student',
+            'created_by' => $user->id,
             'age' => $data['age'] ?? null,
             'birthday' => $data['birthday'] ?? null,
             'contact_number' => $data['contact_number'] ?? null,
@@ -65,7 +75,14 @@ class StudentController extends Controller
             return response()->json(['message' => 'Forbidden'], 403);
         }
 
-        $student = User::where('role','student')->findOrFail($id);
+        $query = User::where('role','student');
+        
+        // Teachers can only update students they created
+        if ($actor->role === 'teacher') {
+            $query->where('created_by', $actor->id);
+        }
+        
+        $student = $query->findOrFail($id);
 
         $data = $request->validate([
             'first_name' => 'required|string|max:100',
@@ -93,5 +110,25 @@ class StudentController extends Controller
         ]);
 
         return response()->json($student->only(['id','first_name','middle_name','last_name','email','age','birthday','contact_number','address']), 200);
+    }
+
+    public function destroy(Request $request, $id)
+    {
+        $actor = $request->user();
+        if (!in_array(($actor->role ?? 'student'), ['teacher','admin'])) {
+            return response()->json(['message' => 'Forbidden'], 403);
+        }
+
+        $query = User::where('role','student');
+        
+        // Teachers can only delete students they created
+        if ($actor->role === 'teacher') {
+            $query->where('created_by', $actor->id);
+        }
+        
+        $student = $query->findOrFail($id);
+        $student->delete();
+
+        return response()->json(['message' => 'Student deleted successfully'], 200);
     }
 }

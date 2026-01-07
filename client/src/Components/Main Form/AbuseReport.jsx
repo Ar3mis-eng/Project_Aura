@@ -46,7 +46,13 @@ export default function AbuseReport({ onFinish = () => {}, onCancel = () => {} }
         if (!cancelled) {
           setQuestionSetsMap(map)
           const keys = Object.keys(map)
-          if (keys.length && !map[type]) setType(keys[0])
+          // Sort keys to move OTHERS to the end
+          const sortedKeys = keys.sort((a, b) => {
+            if (a.toLowerCase() === 'other' || a.toLowerCase() === 'others') return 1
+            if (b.toLowerCase() === 'other' || b.toLowerCase() === 'others') return -1
+            return a.localeCompare(b)
+          })
+          if (sortedKeys.length && !map[type]) setType(sortedKeys[0])
           setLoading(false)
           setLoadMsg('')
         }
@@ -157,7 +163,11 @@ export default function AbuseReport({ onFinish = () => {}, onCancel = () => {} }
         <div className="survey-step">
           <h3 className="survey-title">Select type of abuse</h3>
           <select value={type} onChange={handleChoice} className="survey-select" disabled={Object.keys(questionSetsMap).length === 0}>
-            {Object.keys(questionSetsMap).map(k => <option key={k} value={k}>{k}</option>)}
+            {Object.keys(questionSetsMap).sort((a, b) => {
+              if (a.toLowerCase() === 'other' || a.toLowerCase() === 'others') return 1
+              if (b.toLowerCase() === 'other' || b.toLowerCase() === 'others') return -1
+              return a.localeCompare(b)
+            }).map(k => <option key={k} value={k}>{k}</option>)}
           </select>
           <div className="survey-actions">
             <button type="button" className="survey-next" onClick={() => { setStep(1); setError('') }} disabled={!(questionSetsMap[type] && questionSetsMap[type].length)}>Start</button>

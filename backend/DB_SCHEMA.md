@@ -20,10 +20,13 @@ Collation: utf8mb4 (emoji-safe)
 - email: VARCHAR(191), UNIQUE, NOT NULL
 - password: VARCHAR(255), NOT NULL (bcrypt/argon hash)
 - role: ENUM('student','teacher','admin') NOT NULL DEFAULT 'student'
+- created_by: BIGINT UNSIGNED, NULL → FK users(id) ON DELETE SET NULL
+  - Note: For students, references the teacher who created the account. NULL for teachers/admins.
 - timestamps: created_at, updated_at (TIMESTAMP NULL)
 
 Indexes
 - UNIQUE(email)
+- INDEX(created_by)
 - Optional composite for frequent lookups (e.g., `(role, last_name)`)
 
 ---

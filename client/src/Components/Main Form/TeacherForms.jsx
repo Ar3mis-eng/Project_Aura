@@ -23,9 +23,13 @@ export default function TeacherForms({ onLogout = () => {} }) {
   const [showCompose, setShowCompose] = useState(false)
   const [messagesMenuOpen, setMessagesMenuOpen] = useState(false)
   const messagesMenuRef = useRef(null)
+  const messagesContainerRef = useRef(null)
+  const messagesContainerMobileRef = useRef(null)
   const [folder, setFolder] = useState('Inbox')
   const [search, setSearch] = useState('')
   const [replyText, setReplyText] = useState('')
+  const [unreadCount, setUnreadCount] = useState(0)
+  const [newReportCount, setNewReportCount] = useState(0)
 
   // Reports list from backend (fallback to local cache)
   const [reports, setReports] = useState(() => {
@@ -39,6 +43,11 @@ export default function TeacherForms({ onLogout = () => {} }) {
     try { const raw = localStorage.getItem('teacher_profile'); return raw ? JSON.parse(raw) : { name:'', email:'', teacherId:'', img:'' } } catch { return { name:'', email:'', teacherId:'', img:'' } }
   })
   const [passwords, setPasswords] = useState({ current:'', new:'', confirm:'' })
+
+  // Analytics
+  const [analytics, setAnalytics] = useState({ total_students: 0, total_teachers: 0, total_reports: 0, total_logins: 0 })
+  const [analyticsLoading, setAnalyticsLoading] = useState(false)
+  const [analyticsError, setAnalyticsError] = useState('')
 
   // Add questionnaire
   const [newType, setNewType] = useState('')
@@ -67,10 +76,16 @@ export default function TeacherForms({ onLogout = () => {} }) {
         if (!res.ok) throw new Error('Failed to load question sets')
         const data = await res.json()
         const keys = Array.isArray(data) ? data.filter(it => it && it.key).map(it => it.key) : []
+        // Sort keys to move OTHERS to the end
+        const sortedKeys = keys.sort((a, b) => {
+          if (a.toLowerCase() === 'other' || a.toLowerCase() === 'others') return 1
+          if (b.toLowerCase() === 'other' || b.toLowerCase() === 'others') return -1
+          return a.localeCompare(b)
+        })
         if (!cancelled) {
           setRemoteSets(Array.isArray(data) ? data : [])
-          setAvailableTypes(keys)
-          if (!newType && keys.length) setNewType(keys[0])
+          setAvailableTypes(sortedKeys)
+          if (!newType && sortedKeys.length) setNewType(sortedKeys[0])
         }
       } catch (e) {
         if (!cancelled) {
@@ -93,7 +108,7 @@ export default function TeacherForms({ onLogout = () => {} }) {
   const [studentQuery, setStudentQuery] = useState('')
   const filteredStudents = students.filter(s => {
     const q = studentQuery.toLowerCase();
-    const name = `${s.first_name||''} ${s.last_name||''}`.toLowerCase();
+    const name = `${s.first_name||''} ${s.middle_name||''} ${s.last_name||''}`.toLowerCase();
     const email = (s.email||'').toLowerCase();
     return !q || name.includes(q) || email.includes(q);
   })
@@ -121,8 +136,29 @@ export default function TeacherForms({ onLogout = () => {} }) {
     }
   }
 
+  const deleteStudent = async (studentId) => {
+    if (!confirm('Are you sure you want to delete this student? This action cannot be undone.')) return
+    try {
+      const token = localStorage.getItem('authToken')
+      if (!token) { alert('Not authenticated'); return }
+      const res = await fetch(`http://127.0.0.1:8000/api/students/${studentId}`, {
+        method: 'DELETE',
+        headers: { 'Accept':'application/json', 'Authorization': `Bearer ${token}` }
+      })
+      if (!res.ok) {
+        const msg = await res.json().catch(()=>({}))
+        throw new Error(msg.message || 'Failed to delete student')
+      }
+      await fetchStudents() // Refresh the list
+      alert('Student deleted successfully')
+    } catch (e) {
+      alert(e.message || 'Error deleting student')
+    }
+  }
+
   useEffect(() => { if (view === 'students') fetchStudents() }, [view])
   useEffect(() => { if (showCompose && students.length === 0) fetchStudents() }, [showCompose])
+  useEffect(() => { if (view === 'analytics') fetchAnalytics() }, [view])
 
   // Close menu when clicking outside
   useEffect(() => {
@@ -137,38 +173,149 @@ export default function TeacherForms({ onLogout = () => {} }) {
   useEffect(() => { localStorage.setItem('teacher_profile', JSON.stringify(profile)) }, [profile])
   useEffect(() => { localStorage.setItem('customQuestionSets', JSON.stringify(customSets)) }, [customSets])
 
+  // Fetch unread message count periodically
+  useEffect(() => {
+    const fetchUnreadCount = async () => {
+      try {
+        const token = localStorage.getItem('authToken') || localStorage.getItem('token')
+        if (!token) return
+        const base = getApiBase()
+        const res = await fetch(`${base}/api/threads`, {
+          headers: { Accept: 'application/json', Authorization: `Bearer ${token}` }
+        })
+        if (!res.ok) return
+        const data = await res.json()
+        const threadsData = Array.isArray(data?.data) ? data.data : (Array.isArray(data) ? data : [])
+        const totalUnread = threadsData.reduce((sum, thread) => sum + (thread.unread_count || 0), 0)
+        setUnreadCount(totalUnread)
+      } catch (e) {
+        console.error('Error fetching unread count:', e)
+      }
+    }
+    
+    fetchUnreadCount()
+    const interval = setInterval(fetchUnreadCount, 30000)
+    return () => clearInterval(interval)
+  }, [])
+
+  // Fetch new report count periodically
+  useEffect(() => {
+    const fetchNewReportCount = async () => {
+      try {
+        const token = localStorage.getItem('authToken') || localStorage.getItem('token')
+        if (!token) return
+        const base = getApiBase()
+        const res = await fetch(`${base}/api/reports`, {
+          headers: { Accept: 'application/json', Authorization: `Bearer ${token}` }
+        })
+        if (!res.ok) return
+        const data = await res.json()
+        const list = Array.isArray(data?.data) ? data.data : (Array.isArray(data) ? data : [])
+        
+        // Get last viewed timestamp from localStorage
+        const lastViewed = localStorage.getItem('reports_last_viewed')
+        const lastViewedTime = lastViewed ? new Date(lastViewed).getTime() : 0
+        
+        // Count only reports submitted after last view
+        const newCount = list.filter(r => {
+          if (r.status !== 'submitted') return false
+          const submittedAt = r.submitted_at ? new Date(r.submitted_at).getTime() : 0
+          return submittedAt > lastViewedTime
+        }).length
+        
+        setNewReportCount(newCount)
+      } catch (e) {
+        console.error('Error fetching new report count:', e)
+      }
+    }
+    
+    fetchNewReportCount()
+    const interval = setInterval(fetchNewReportCount, 30000)
+    return () => clearInterval(interval)
+  }, [])
+
+  // Reset unread count when viewing messages or reports
+  useEffect(() => {
+    if (view === 'messages') {
+      setUnreadCount(0)
+    }
+    if (view === 'reports') {
+      // Mark reports as viewed
+      localStorage.setItem('reports_last_viewed', new Date().toISOString())
+      setNewReportCount(0)
+    }
+  }, [view])
+
   // Messages handlers - thread-based
-  const fetchThreads = async () => {
+  const fetchThreads = async (silent = false) => {
     try {
-      setThreadsLoading(true); setThreadsError('')
+      if (!silent) setThreadsLoading(true)
+      setThreadsError('')
       const token = localStorage.getItem('authToken') || localStorage.getItem('token')
-      if (!token) { setThreadsLoading(false); setThreadsError('Not authenticated'); return }
+      if (!token) { 
+        if (!silent) setThreadsLoading(false)
+        setThreadsError('Not authenticated')
+        return 
+      }
       const base = getApiBase()
       const res = await fetch(`${base}/api/threads`, { headers: { Accept:'application/json', Authorization: `Bearer ${token}` } })
       if (!res.ok) throw new Error('Failed to load threads')
       const data = await res.json()
       setThreads(Array.isArray(data?.data) ? data.data : (Array.isArray(data) ? data : []))
     } catch (e) {
-      setThreadsError(e.message || 'Error loading threads')
+      if (!silent) setThreadsError(e.message || 'Error loading threads')
     } finally {
-      setThreadsLoading(false)
+      if (!silent) setThreadsLoading(false)
     }
   }
 
-  const fetchThreadMessages = async (threadId) => {
+  const fetchThreadMessages = async (threadId, silent = false) => {
     try {
-      setMessagesLoading(true)
+      if (!silent) setMessagesLoading(true)
       const token = localStorage.getItem('authToken') || localStorage.getItem('token')
       const base = getApiBase()
       const res = await fetch(`${base}/api/threads/${threadId}/messages`, { headers: { Accept:'application/json', Authorization: `Bearer ${token}` } })
       if (!res.ok) throw new Error('Failed to load messages')
       const data = await res.json()
-      setThreadMessages(Array.isArray(data?.data) ? data.data : (Array.isArray(data) ? data : []))
+      const fetchedMessages = Array.isArray(data?.data) ? data.data : (Array.isArray(data) ? data : [])
+      
+      // Preserve optimistic messages (temporary ones being sent)
+      setThreadMessages(prev => {
+        const optimisticMessages = prev.filter(m => m.id && m.id.toString().startsWith('temp-'))
+        // Merge: keep optimistic messages, add fetched messages that aren't duplicates
+        const fetchedIds = new Set(fetchedMessages.map(m => m.id))
+        const merged = [...fetchedMessages, ...optimisticMessages.filter(om => !fetchedIds.has(om.id))]
+        return merged
+      })
     } catch (e) {
-      alert('Error loading messages: ' + e.message)
+      if (!silent) alert('Error loading messages: ' + e.message)
     } finally {
-      setMessagesLoading(false)
+      if (!silent) setMessagesLoading(false)
     }
+  }
+
+  const refreshUnreadCount = async () => {
+    try {
+      const token = localStorage.getItem('authToken') || localStorage.getItem('token')
+      if (!token) return
+      const base = getApiBase()
+      const res = await fetch(`${base}/api/threads`, {
+        headers: { Accept: 'application/json', Authorization: `Bearer ${token}` }
+      })
+      if (!res.ok) return
+      const data = await res.json()
+      const threadsData = Array.isArray(data?.data) ? data.data : (Array.isArray(data) ? data : [])
+      const totalUnread = threadsData.reduce((sum, t) => sum + (t.unread_count || 0), 0)
+      setUnreadCount(totalUnread)
+    } catch (e) {
+      console.error('Error refreshing unread count:', e)
+    }
+  }
+
+  const handleBackFromThread = () => {
+    setSelectedThread(null)
+    fetchThreads(true)
+    refreshUnreadCount()
   }
 
   const startCompose = () => { 
@@ -204,6 +351,7 @@ export default function TeacherForms({ onLogout = () => {} }) {
       setCompose({ id: null, recipientId: null, recipient:'', subject:'', body:'' })
       setShowCompose(false)
       fetchThreads()
+      refreshUnreadCount()
     } catch (e) {
       alert(e.message || 'Error sending message')
     }
@@ -212,35 +360,129 @@ export default function TeacherForms({ onLogout = () => {} }) {
   const selectThread = async (thread) => {
     setSelectedThread(thread)
     setView('messages')
-    await fetchThreadMessages(thread.id)
+    await fetchThreadMessages(thread.id, true)
+    // Refresh unread count after opening thread
+    setTimeout(() => refreshUnreadCount(), 500)
   }
 
   const selectThreadMobile = async (thread) => {
     setSelectedThread(thread)
     setView('messages')
     setShowMenu(false)
-    await fetchThreadMessages(thread.id)
+    await fetchThreadMessages(thread.id, true)
+    // Refresh unread count after opening thread
+    setTimeout(() => refreshUnreadCount(), 500)
   }
 
   const sendReply = async (body) => {
     if (!selectedThread || !body.trim()) return
+    
+    const messageText = body.trim()
+    const currentUser = JSON.parse(localStorage.getItem('user') || '{}')
+    const currentUserId = currentUser.id ? parseInt(currentUser.id) : null
+    
+    // Optimistic UI: Add message immediately
+    const optimisticMessage = {
+      id: `temp-${Date.now()}`,
+      body: messageText,
+      from_user_id: currentUserId,
+      from: {
+        id: currentUserId,
+        first_name: currentUser.first_name || currentUser.name || 'You',
+        last_name: currentUser.last_name || ''
+      },
+      created_at: new Date().toISOString(),
+      sending: true
+    }
+    
+    setThreadMessages(prev => [...prev, optimisticMessage])
+    
     try {
       const token = localStorage.getItem('authToken') || localStorage.getItem('token')
       const base = getApiBase()
       const res = await fetch(`${base}/api/threads/${selectedThread.id}/messages`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Accept:'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ body })
+        body: JSON.stringify({ body: messageText })
       })
       if (!res.ok) throw new Error('Failed to send message')
-      await fetchThreadMessages(selectedThread.id)
+      
+      const data = await res.json()
+      const newMessage = data?.data || data
+      
+      // Replace optimistic message with real one from server
+      setThreadMessages(prev => prev.map(m => 
+        m.id === optimisticMessage.id ? newMessage : m
+      ))
+      // Refresh threads list to update conversation preview
+      fetchThreads(true)
+      refreshUnreadCount()
     } catch (e) {
+      // Remove optimistic message on error
+      setThreadMessages(prev => prev.filter(m => m.id !== optimisticMessage.id))
       alert('Error sending reply: ' + e.message)
     }
   }
 
   // Reports handlers
-  const deleteReport = (id) => { setReports(prev => prev.filter(r => r.id !== id)) }
+  const deleteReport = async (id, studentName) => {
+    if (!confirm(`Are you sure you want to delete this report from ${studentName}?`)) return
+    try {
+      const token = localStorage.getItem('authToken') || localStorage.getItem('token')
+      const base = getApiBase()
+      const res = await fetch(`${base}/api/reports/${id}`, {
+        method: 'DELETE',
+        headers: { Accept:'application/json', Authorization: `Bearer ${token}` }
+      })
+      if (!res.ok) throw new Error('Failed to delete report')
+      setReports(prev => prev.filter(r => r.id !== id))
+      alert('Report deleted successfully')
+    } catch (e) {
+      alert('Error deleting report: ' + e.message)
+    }
+  }
+
+  // Analytics handlers
+  const fetchAnalytics = async () => {
+    try {
+      setAnalyticsLoading(true)
+      setAnalyticsError('')
+      const token = localStorage.getItem('authToken') || localStorage.getItem('token')
+      if (!token) {
+        setAnalyticsLoading(false)
+        setAnalyticsError('Not authenticated')
+        return
+      }
+      const base = getApiBase()
+      const res = await fetch(`${base}/api/analytics`, {
+        headers: { Accept: 'application/json', Authorization: `Bearer ${token}` }
+      })
+      if (!res.ok) throw new Error('Failed to load analytics')
+      const data = await res.json()
+      setAnalytics(data.data || { total_students: 0, total_teachers: 0, total_reports: 0, total_logins: 0 })
+    } catch (e) {
+      setAnalyticsError(e.message || 'Error loading analytics')
+    } finally {
+      setAnalyticsLoading(false)
+    }
+  }
+
+  const messageStudent = (report) => {
+    if (!report.student) {
+      alert('Student information not available')
+      return
+    }
+    const dateStr = report.submitted_at ? String(report.submitted_at).toString().slice(0,10) : ''
+    setCompose({
+      id: null,
+      recipientId: parseInt(report.student.id),
+      recipient: `${report.student.first_name||''} ${report.student.last_name||''}`.trim(),
+      subject: `Re: ${report.type || 'Report'} - Report Submitted on ${dateStr}`,
+      body: ''
+    })
+    setShowCompose(true)
+    setView('messages')
+  }
 
   const fetchReports = async () => {
     try {
@@ -264,7 +506,46 @@ export default function TeacherForms({ onLogout = () => {} }) {
   }
 
   useEffect(() => { if (view === 'reports') fetchReports() }, [view])
-  useEffect(() => { if (view === 'messages') fetchThreads() }, [view])
+  useEffect(() => { 
+    if (view === 'messages') {
+      fetchThreads()
+      refreshUnreadCount()
+      // Poll for new messages every 10 seconds
+      const interval = setInterval(() => {
+        fetchThreads(true) // silent mode
+        refreshUnreadCount()
+      }, 10000)
+      return () => clearInterval(interval)
+    }
+  }, [view])
+  
+  // Auto-scroll to bottom when messages change
+  useEffect(() => {
+    if (messagesContainerRef.current) {
+      messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight
+    }
+    if (messagesContainerMobileRef.current) {
+      messagesContainerMobileRef.current.scrollTop = messagesContainerMobileRef.current.scrollHeight
+    }
+  }, [threadMessages])
+
+  // Poll for new messages in selected thread
+  useEffect(() => {
+    if (selectedThread && view === 'messages') {
+      const interval = setInterval(() => {
+        fetchThreadMessages(selectedThread.id, true) // silent mode
+      }, 5000)
+      return () => clearInterval(interval)
+    }
+  }, [selectedThread, view])
+
+  // Also add global polling for unread count
+  useEffect(() => {
+    const interval = setInterval(() => {
+      refreshUnreadCount()
+    }, 15000) // Every 15 seconds
+    return () => clearInterval(interval)
+  }, [])
 
   // Report detail view (modal)
   const [viewingReport, setViewingReport] = useState(null)
@@ -280,6 +561,25 @@ export default function TeacherForms({ onLogout = () => {} }) {
       const sets = await res.json()
       const match = Array.isArray(sets) ? sets.find(s => s && s.key === r.type) : null
       setViewingReport({ report: r, questions: Array.isArray(match?.schema) ? match.schema : [] })
+      
+      // Mark this report as viewed
+      localStorage.setItem('reports_last_viewed', new Date().toISOString())
+      // Recalculate the new report count
+      const reportsRes = await fetch(`${base}/api/reports`, {
+        headers: { Accept: 'application/json', Authorization: `Bearer ${token}` }
+      })
+      if (reportsRes.ok) {
+        const data = await reportsRes.json()
+        const list = Array.isArray(data?.data) ? data.data : (Array.isArray(data) ? data : [])
+        const lastViewed = new Date().toISOString()
+        const lastViewedTime = new Date(lastViewed).getTime()
+        const newCount = list.filter(r => {
+          if (r.status !== 'submitted') return false
+          const submittedAt = r.submitted_at ? new Date(r.submitted_at).getTime() : 0
+          return submittedAt > lastViewedTime
+        }).length
+        setNewReportCount(newCount)
+      }
     } catch (e) {
       setViewingReport({ report: r, questions: [] })
       setReportDetailError(e.message || 'Unable to load questions')
@@ -364,8 +664,37 @@ export default function TeacherForms({ onLogout = () => {} }) {
               </button>
               {showMenu && (
                 <div className="menu-dropdown">
-                  <button onClick={() => handleMenuSelect('reports')}>Report Submitted</button>
-                  <button onClick={() => handleMenuSelect('messages')}>Messages</button>
+                  <button onClick={() => handleMenuSelect('reports')} style={{position:'relative'}}>
+                    Report Submitted
+                    {newReportCount > 0 && (
+                      <span style={{
+                        position: 'absolute',
+                        top: '50%',
+                        right: '12px',
+                        transform: 'translateY(-50%)',
+                        width: '8px',
+                        height: '8px',
+                        borderRadius: '50%',
+                        backgroundColor: '#ef4444'
+                      }} />
+                    )}
+                  </button>
+                  <button onClick={() => handleMenuSelect('analytics')}>Analytics</button>
+                  <button onClick={() => handleMenuSelect('messages')} style={{position:'relative'}}>
+                    Messages
+                    {unreadCount > 0 && (
+                      <span style={{
+                        position: 'absolute',
+                        top: '50%',
+                        right: '12px',
+                        transform: 'translateY(-50%)',
+                        width: '8px',
+                        height: '8px',
+                        backgroundColor: '#dc2626',
+                        borderRadius: '50%'
+                      }} />
+                    )}
+                  </button>
                   <button onClick={() => handleMenuSelect('students')}>Student Management</button>
                   <button onClick={() => handleMenuSelect('add')}>Add Questionnaire</button>
                   <button onClick={() => handleMenuSelect('settings')}>Settings</button>
@@ -389,8 +718,37 @@ export default function TeacherForms({ onLogout = () => {} }) {
           {/* Desktop sidebar menu */}
           <aside className="teacher-sidebar">
             <nav>
-              <button className={view === 'reports' ? 'active' : ''} onClick={() => setView('reports')}>Report Submitted</button>
-              <button className={view === 'messages' ? 'active' : ''} onClick={() => setView('messages')}>Messages</button>
+              <button className={view === 'reports' ? 'active' : ''} onClick={() => setView('reports')} style={{position:'relative'}}>
+                Report Submitted
+                {newReportCount > 0 && (
+                  <span style={{
+                    position: 'absolute',
+                    top: '50%',
+                    right: '12px',
+                    transform: 'translateY(-50%)',
+                    width: '8px',
+                    height: '8px',
+                    borderRadius: '50%',
+                    backgroundColor: '#ef4444'
+                  }} />
+                )}
+              </button>
+              <button className={view === 'analytics' ? 'active' : ''} onClick={() => setView('analytics')}>Analytics</button>
+              <button className={view === 'messages' ? 'active' : ''} onClick={() => setView('messages')} style={{position:'relative'}}>
+                Messages
+                {unreadCount > 0 && (
+                  <span style={{
+                    position: 'absolute',
+                    top: '50%',
+                    right: '12px',
+                    transform: 'translateY(-50%)',
+                    width: '8px',
+                    height: '8px',
+                    backgroundColor: '#dc2626',
+                    borderRadius: '50%'
+                  }} />
+                )}
+              </button>
               <button className={view === 'students' ? 'active' : ''} onClick={() => setView('students')}>Student Management</button>
               <button className={view === 'add' ? 'active' : ''} onClick={() => setView('add')}>Add Questionnaire</button>
               <button className={view === 'settings' ? 'active' : ''} onClick={() => setView('settings')}>Settings</button>
@@ -408,25 +766,72 @@ export default function TeacherForms({ onLogout = () => {} }) {
                 <div className="table-wrap">
                   <table className="reports-table">
                     <thead>
-                      <tr><th>Student Name</th><th>Type of Abuse</th><th>Date Submitted</th><th>Action</th></tr>
+                      <tr><th>Student Name</th><th>Type of Abuse</th><th>Date Submitted</th><th>Actions</th></tr>
                     </thead>
                     <tbody>
                       {reportsLoading ? (
-                        <tr><td colSpan={5} className="empty">Loading...</td></tr>
+                        <tr><td colSpan={4} className="empty">Loading...</td></tr>
                       ) : reportsError ? (
-                        <tr><td colSpan={5} className="empty" style={{color:'#b91c1c'}}>{reportsError}</td></tr>
+                        <tr><td colSpan={4} className="empty" style={{color:'#b91c1c'}}>{reportsError}</td></tr>
                       ) : reports.length === 0 ? (
-                        <tr><td colSpan={5} className="empty">No reports submitted yet.</td></tr>
+                        <tr><td colSpan={4} className="empty">No reports submitted yet.</td></tr>
                       ) : reports.map(r => {
                         const studentName = r.student ? `${r.student.first_name||''} ${r.student.last_name||''}`.trim() : ''
                         const dateStr = r.submitted_at ? String(r.submitted_at).toString().replace('T',' ').slice(0,19) : ''
                         return (
-                          <tr key={r.id}><td>{studentName}</td><td>{r.type||''}</td><td>{dateStr}</td><td><button className="btn-primary" onClick={() => openReport(r)}>View</button></td></tr>
+                          <tr key={r.id}>
+                            <td>{studentName}</td>
+                            <td>{r.type||''}</td>
+                            <td>{dateStr}</td>
+                            <td>
+                              <button className="btn-primary" onClick={() => openReport(r)} style={{marginRight:'0.5rem'}}>View</button>
+                              <button className="btn-primary" onClick={() => messageStudent(r)} style={{marginRight:'0.5rem'}}>Message</button>
+                              <button className="btn-link danger" onClick={() => deleteReport(r.id, studentName)}>Delete</button>
+                            </td>
+                          </tr>
                         )
                       })}
                     </tbody>
                   </table>
                 </div>
+              </div>
+            )}
+
+            {view === 'analytics' && (
+              <div>
+                <h3>Analytics Dashboard</h3>
+                {analyticsLoading ? (
+                  <div className="card"><div className="empty">Loading analytics...</div></div>
+                ) : analyticsError ? (
+                  <div className="card"><div className="empty" style={{color:'#b91c1c'}}>{analyticsError}</div></div>
+                ) : (
+                  <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(250px, 1fr))', gap:'1rem', marginTop:'1rem'}}>
+                    <div className="card" style={{textAlign:'center', padding:'1.5rem'}}>
+                      <div style={{fontSize:'2.5rem', fontWeight:'700', color:'#667eea', marginBottom:'0.5rem'}}>
+                        {analytics.total_students}
+                      </div>
+                      <div style={{fontSize:'1rem', color:'#6b7280', fontWeight:'500'}}>Total Students</div>
+                    </div>
+                    <div className="card" style={{textAlign:'center', padding:'1.5rem'}}>
+                      <div style={{fontSize:'2.5rem', fontWeight:'700', color:'#764ba2', marginBottom:'0.5rem'}}>
+                        {analytics.total_teachers}
+                      </div>
+                      <div style={{fontSize:'1rem', color:'#6b7280', fontWeight:'500'}}>Total Teachers</div>
+                    </div>
+                    <div className="card" style={{textAlign:'center', padding:'1.5rem'}}>
+                      <div style={{fontSize:'2.5rem', fontWeight:'700', color:'#059669', marginBottom:'0.5rem'}}>
+                        {analytics.total_reports}
+                      </div>
+                      <div style={{fontSize:'1rem', color:'#6b7280', fontWeight:'500'}}>Reports Submitted</div>
+                    </div>
+                    <div className="card" style={{textAlign:'center', padding:'1.5rem'}}>
+                      <div style={{fontSize:'2.5rem', fontWeight:'700', color:'#dc2626', marginBottom:'0.5rem'}}>
+                        {analytics.total_logins}
+                      </div>
+                      <div style={{fontSize:'1rem', color:'#6b7280', fontWeight:'500'}}>Total App Usage</div>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -510,9 +915,6 @@ export default function TeacherForms({ onLogout = () => {} }) {
 
                           <div className="messages-list-header">
                             <h3>Conversations</h3>
-                            <div className="list-actions">
-                              <button className="btn-ghost" onClick={fetchThreads}>Refresh</button>
-                            </div>
                           </div>
 
                           <div className="messages-list">
@@ -524,18 +926,36 @@ export default function TeacherForms({ onLogout = () => {} }) {
                               <div className="empty">No conversations yet.</div>
                             ) : (
                               threads.filter(t => t.subject?.toLowerCase().includes(search.toLowerCase())).map(t => {
-                                const participants = Array.isArray(t.participants) ? t.participants.map(p => `${p.first_name||''} ${p.last_name||''}`).join(', ') : ''
+                                const currentUser = JSON.parse(localStorage.getItem('user') || '{}')
+                                const currentUserId = currentUser.id ? parseInt(currentUser.id) : null
+                                const participants = Array.isArray(t.participants) 
+                                  ? t.participants
+                                      .filter(p => p.id !== currentUserId)
+                                      .map(p => `${p.first_name||''} ${p.last_name||''}`).join(', ') 
+                                  : ''
                                 const lastMsg = Array.isArray(t.messages) && t.messages.length > 0 ? t.messages[0].body : ''
+                                const hasUnread = t.unread_count && t.unread_count > 0
                                 return (
-                                  <div key={t.id} className="mail-item" onClick={() => selectThreadMobile(t)}>
-                                    <div className="mail-left">
-                                      <div className="mail-recipient">{participants}</div>
-                                      <div className="mail-subject">{t.subject}</div>
-                                      {lastMsg && <div className="mail-preview">{lastMsg.slice(0, 50)}{lastMsg.length > 50 ? '...' : ''}</div>}
+                                  <div key={t.id} className={`thread-item ${hasUnread ? 'has-unread' : ''}`} onClick={() => selectThreadMobile(t)}>
+                                    <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'0.25rem'}}>
+                                      <div style={{fontWeight: hasUnread ? '700' : '600'}}>{participants || 'Unknown'}</div>
+                                      {hasUnread && (
+                                        <span style={{
+                                          backgroundColor: '#3b82f6',
+                                          color: 'white',
+                                          fontSize: '0.75rem',
+                                          fontWeight: '600',
+                                          padding: '0.125rem 0.5rem',
+                                          borderRadius: '9999px',
+                                          minWidth: '1.25rem',
+                                          textAlign: 'center'
+                                        }}>
+                                          {t.unread_count}
+                                        </span>
+                                      )}
                                     </div>
-                                    <div className="mail-right">
-                                      <div className="msg-time">{t.updated_at ? new Date(t.updated_at).toLocaleString() : ''}</div>
-                                    </div>
+                                    <div style={{fontSize:'0.875rem', color:'#6b7280', marginBottom:'0.25rem'}}>{t.subject}</div>
+                                    {lastMsg && <div style={{fontSize:'0.875rem', color: hasUnread ? '#374151' : '#9ca3af', fontWeight: hasUnread ? '500' : '400'}}>{lastMsg.slice(0, 60)}{lastMsg.length > 60 ? '...' : ''}</div>}
                                   </div>
                                 )
                               })
@@ -547,9 +967,19 @@ export default function TeacherForms({ onLogout = () => {} }) {
                   ) : (
                     <div className="message-view-mobile">
                       <div className="mobile-view-header">
-                        <button className="btn-ghost" onClick={() => setSelectedThread(null)}>Back</button>
-                        <div className="mobile-view-actions">
-                          <strong>{selectedThread.subject}</strong>
+                        <div style={{display:'flex', alignItems:'center', gap:'0.75rem'}}>
+                          <button className="btn-ghost" onClick={handleBackFromThread}>Back</button>
+                          <div style={{fontWeight:'700', fontSize:'1rem'}}>
+                            {(() => {
+                              const currentUser = JSON.parse(localStorage.getItem('user') || '{}')
+                              const currentUserId = currentUser.id ? parseInt(currentUser.id) : null
+                              return Array.isArray(selectedThread.participants) 
+                                ? selectedThread.participants
+                                    .filter(p => p.id !== currentUserId)
+                                    .map(p => `${p.first_name||''} ${p.last_name||''}`).join(', ') 
+                                : ''
+                            })()}
+                          </div>
                         </div>
                       </div>
                       <div className="thread-messages-container">
@@ -558,14 +988,20 @@ export default function TeacherForms({ onLogout = () => {} }) {
                         ) : threadMessages.length === 0 ? (
                           <div className="empty">No messages in this thread.</div>
                         ) : (
-                          <div className="thread-messages">
+                          <div ref={messagesContainerRef} className="messages-list" style={{padding:'1rem', gap:'0.75rem', display:'flex', flexDirection:'column'}}>
                             {threadMessages.map(msg => {
                               const from = msg.from ? `${msg.from.first_name||''} ${msg.from.last_name||''}`.trim() : 'Unknown'
+                              const currentUser = JSON.parse(localStorage.getItem('user') || '{}')
+                              const currentUserId = currentUser.id ? parseInt(currentUser.id) : null
+                              const isOutgoing = currentUserId && msg.from_user_id && parseInt(msg.from_user_id) === currentUserId
+                              const isUnread = !isOutgoing && msg.is_read === false
                               return (
-                                <div key={msg.id} className="thread-message">
-                                  <div className="msg-from">{from}</div>
-                                  <div className="msg-body">{msg.body}</div>
-                                  <div className="msg-time">{msg.created_at ? new Date(msg.created_at).toLocaleString() : ''}</div>
+                                <div key={msg.id} className={`message-item ${isOutgoing ? 'outgoing' : 'incoming'} ${isUnread ? 'unread' : ''}`}>
+                                  <div className="bubble" style={isUnread ? {backgroundColor: '#dbeafe', borderLeft: '3px solid #3b82f6'} : {}}>
+                                    <div style={{fontWeight:'600', fontSize:'0.7rem', marginBottom:'0.25rem', color: isOutgoing ? '#e0e7ff' : '#4b5563'}}>{from}</div>
+                                    <div>{msg.body}</div>
+                                  </div>
+                                  <div className="msg-time">{msg.created_at ? new Date(msg.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : ''}</div>
                                 </div>
                               )
                             })}
@@ -583,91 +1019,104 @@ export default function TeacherForms({ onLogout = () => {} }) {
                   )}
                 </div>
               ) : (
-                <div className="messages-gmail">
-                  <div className="gmail-left">
-                    <div className="gmail-actions card">
+                <div className="messages-container">
+                  <div className="messages-header">
+                    <div className="messages-title">Messages</div>
+                    <div className="messages-actions">
                       <button className="btn-primary" onClick={startCompose}>Compose</button>
-                      <div className="gmail-folders">
-                        <button className="folder" onClick={fetchThreads}>Refresh</button>
-                      </div>
                     </div>
                   </div>
 
-                  <div className="gmail-list card">
-                    <div className="messages-list-header">
-                      <h3>Conversations</h3>
-                      <div className="list-actions">
-                        <input className="msg-search" placeholder="Search" value={search} onChange={e=>setSearch(e.target.value)} style={{marginRight:'0.5rem'}} />
-                      </div>
-                    </div>
-                    <div className="gmail-table">
-                      <div className="gmail-row header">
-                        <div className="col-recipient">Participants</div>
-                        <div className="col-subject">Subject</div>
-                        <div className="col-date">Updated</div>
-                      </div>
-                      {threadsLoading ? (
-                        <div className="empty">Loading...</div>
-                      ) : threadsError ? (
-                        <div className="empty" style={{color:'#b91c1c'}}>{threadsError}</div>
-                      ) : threads.filter(t => t.subject?.toLowerCase().includes(search.toLowerCase())).length === 0 ? (
+                  {!selectedThread ? (
+                    <div className="threads-list">
+                      {threadsLoading && <div className="empty">Loading conversations...</div>}
+                      {threadsError && <div className="empty" style={{color:'#b91c1c'}}>{threadsError}</div>}
+                      {!threadsLoading && !threadsError && threads.length === 0 && (
                         <div className="empty">No conversations yet.</div>
-                      ) : (
-                        threads.filter(t => t.subject?.toLowerCase().includes(search.toLowerCase())).map(t => {
-                          const participants = Array.isArray(t.participants) ? t.participants.map(p => `${p.first_name||''} ${p.last_name||''}`).join(', ') : ''
-                          return (
-                            <div key={t.id} className={`gmail-row ${selectedThread?.id===t.id? 'selected':''}`} onClick={() => selectThread(t)}>
-                              <div className="col-recipient">{participants}</div>
-                              <div className="col-subject">{t.subject}</div>
-                              <div className="col-date">{t.updated_at ? new Date(t.updated_at).toLocaleString() : ''}</div>
-                            </div>
-                          )
-                        })
                       )}
+                      {!threadsLoading && threads.map(t => {
+                        const currentUser = JSON.parse(localStorage.getItem('user') || '{}')
+                        const currentUserId = currentUser.id ? parseInt(currentUser.id) : null
+                        const participants = Array.isArray(t.participants) 
+                          ? t.participants
+                              .filter(p => p.id !== currentUserId)
+                              .map(p => `${p.first_name||''} ${p.last_name||''}`).join(', ') 
+                          : ''
+                        const lastMsg = Array.isArray(t.messages) && t.messages.length > 0 ? t.messages[0].body : ''
+                        const hasUnread = t.unread_count && t.unread_count > 0
+                        return (
+                          <div key={t.id} className={`thread-item ${hasUnread ? 'has-unread' : ''}`} onClick={() => selectThread(t)}>
+                            <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'0.25rem'}}>
+                              <div style={{fontWeight: hasUnread ? '700' : '600'}}>{participants || 'Unknown'}</div>
+                              {hasUnread && (
+                                <span style={{
+                                  backgroundColor: '#3b82f6',
+                                  color: 'white',
+                                  fontSize: '0.75rem',
+                                  fontWeight: '600',
+                                  padding: '0.125rem 0.5rem',
+                                  borderRadius: '9999px',
+                                  minWidth: '1.25rem',
+                                  textAlign: 'center'
+                                }}>
+                                  {t.unread_count}
+                                </span>
+                              )}
+                            </div>
+                            <div style={{fontSize:'0.875rem', color:'#6b7280', marginBottom:'0.25rem'}}>{t.subject}</div>
+                            {lastMsg && <div style={{fontSize:'0.875rem', color: hasUnread ? '#374151' : '#9ca3af', fontWeight: hasUnread ? '500' : '400'}}>{lastMsg.slice(0, 60)}{lastMsg.length > 60 ? '...' : ''}</div>}
+                          </div>
+                        )
+                      })}
                     </div>
-                  </div>
-
-                  <div className="gmail-view card">
-                    {selectedThread ? (
-                      <div>
-                        <div className="view-header">
-                          <strong>{selectedThread.subject}</strong>
-                          <div className="view-meta">
-                            {Array.isArray(selectedThread.participants) ? selectedThread.participants.map(p => `${p.first_name||''} ${p.last_name||''}`).join(', ') : ''}
+                  ) : (
+                    <>
+                      <div className="conversation-header">
+                        <div style={{display:'flex', alignItems:'center', gap:'0.75rem'}}>
+                          <button className="btn-light" onClick={handleBackFromThread}>← Back</button>
+                          <div style={{fontWeight:'600', fontSize:'1.1rem'}}>
+                            {(() => {
+                              const currentUser = JSON.parse(localStorage.getItem('user') || '{}')
+                              const currentUserId = currentUser.id ? parseInt(currentUser.id) : null
+                              return Array.isArray(selectedThread.participants) 
+                                ? selectedThread.participants
+                                    .filter(p => p.id !== currentUserId)
+                                    .map(p => `${p.first_name||''} ${p.last_name||''}`).join(', ')
+                                : ''
+                            })()}
                           </div>
                         </div>
-                        <div className="thread-messages-container" style={{maxHeight:'400px', overflowY:'auto', marginBottom:'1rem'}}>
-                          {messagesLoading ? (
-                            <div className="empty">Loading...</div>
-                          ) : threadMessages.length === 0 ? (
-                            <div className="empty">No messages yet.</div>
-                          ) : (
-                            <div className="thread-messages">
-                              {threadMessages.map(msg => {
-                                const from = msg.from ? `${msg.from.first_name||''} ${msg.from.last_name||''}`.trim() : 'Unknown'
-                                return (
-                                  <div key={msg.id} className="thread-message" style={{marginBottom:'1rem', padding:'0.75rem', background:'#f9fafb', borderRadius:'0.5rem'}}>
-                                    <div style={{fontWeight:'600', marginBottom:'0.25rem'}}>{from}</div>
-                                    <div style={{marginBottom:'0.25rem'}}>{msg.body}</div>
-                                    <div style={{fontSize:'0.75rem', color:'#6b7280'}}>{msg.created_at ? new Date(msg.created_at).toLocaleString() : ''}</div>
-                                  </div>
-                                )
-                              })}
-                            </div>
-                          )}
-                        </div>
-                        <div className="reply-section">
-                          <textarea placeholder="Type your reply..." value={replyText} onChange={e=>setReplyText(e.target.value)} rows={3} style={{width:'100%', marginBottom:'0.5rem', padding:'0.5rem', border:'1px solid #d1d5db', borderRadius:'0.375rem'}} />
-                          <button className="btn-primary" onClick={async () => {
-                            await sendReply(replyText)
-                            setReplyText('')
-                          }}>Send Reply</button>
-                        </div>
                       </div>
-                    ) : (
-                      <div className="empty">Select a conversation to view</div>
-                    )}
-                  </div>
+
+                      <div className="messages-list" ref={messagesContainerMobileRef}>
+                        {messagesLoading && <div className="empty">Loading messages...</div>}
+                        {!messagesLoading && threadMessages.map(msg => {
+                          const from = msg.from ? `${msg.from.first_name||''} ${msg.from.last_name||''}`.trim() : 'Unknown'
+                          const currentUser = JSON.parse(localStorage.getItem('user') || '{}')
+                          const currentUserId = currentUser.id ? parseInt(currentUser.id) : null
+                          const isOutgoing = currentUserId && msg.from_user_id && parseInt(msg.from_user_id) === currentUserId
+                          const isUnread = !isOutgoing && msg.is_read === false
+                          return (
+                            <div key={msg.id} className={`message-item ${isOutgoing ? 'outgoing' : 'incoming'} ${isUnread ? 'unread' : ''}`}>
+                              <div className="bubble" style={isUnread ? {backgroundColor: '#dbeafe', borderLeft: '3px solid #3b82f6'} : {}}>
+                                <div style={{fontWeight:'600', fontSize:'0.7rem', marginBottom:'0.25rem', color: isOutgoing ? '#e0e7ff' : '#4b5563'}}>{from}</div>
+                                <div>{msg.body}</div>
+                              </div>
+                              <div className="msg-time">{msg.created_at ? new Date(msg.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : ''}</div>
+                            </div>
+                          )
+                        })}
+                      </div>
+
+                      <div className="message-input-area">
+                        <textarea ref={messagesContainerRef} className="message-textarea" placeholder="Type your reply..." value={replyText} onChange={e=>setReplyText(e.target.value)} />
+                        <button className="send-btn" type="button" onClick={async () => {
+                          await sendReply(replyText)
+                          setReplyText('')
+                        }}>Send</button>
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
               </>
@@ -821,16 +1270,13 @@ export default function TeacherForms({ onLogout = () => {} }) {
                 <div className="card">
                   <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', gap:'0.5rem'}}>
                     <h4 style={{margin:0}}>Registered Students</h4>
-                    <div style={{display:'flex', gap:'0.5rem'}}>
-                      <input className="msg-search" placeholder="Search name or email" value={studentQuery} onChange={e=>setStudentQuery(e.target.value)} />
-                      <button className="btn-ghost" onClick={fetchStudents}>Refresh</button>
-                    </div>
+                    <input className="msg-search" placeholder="Search name or email" value={studentQuery} onChange={e=>setStudentQuery(e.target.value)} />
                   </div>
                   {studentsError && <div className="status-line" style={{color:'#b91c1c'}}>{studentsError}</div>}
                   <div className="table-wrap">
                     <table className="reports-table">
                       <thead>
-                        <tr><th>Name</th><th>Age</th><th>Birthday</th><th>Contact</th><th>Address</th><th>Email</th><th>Created</th><th>Actions</th></tr>
+                        <tr><th>Name</th><th>Age</th><th>Birthday</th><th>Contact</th><th>Address</th><th>Email</th><th>Actions</th></tr>
                       </thead>
                       <tbody>
                         {studentsLoading ? (
@@ -846,7 +1292,6 @@ export default function TeacherForms({ onLogout = () => {} }) {
                               <td>{s.contact_number ?? ''}</td>
                               <td>{s.address ?? ''}</td>
                               <td>{s.email}</td>
-                              <td>{(s.created_at||'').toString().replace('T',' ').slice(0,19)}</td>
                               <td>
                                 <button className="btn-link" onClick={() => { setEditStudent({
                                   id: s.id,
@@ -859,6 +1304,8 @@ export default function TeacherForms({ onLogout = () => {} }) {
                                   address: s.address || '',
                                   email: s.email || '',
                                 }); setShowEdit(true); }}>Edit</button>
+                                {' '}
+                                <button className="btn-link" style={{color:'#b91c1c'}} onClick={() => deleteStudent(s.id)}>Delete</button>
                               </td>
                             </tr>
                           ))
@@ -933,6 +1380,8 @@ export default function TeacherForms({ onLogout = () => {} }) {
                         const created = await res.json()
                         setStudentStatus(`Student registered: ${created.first_name} ${created.last_name}`)
                         setStudentForm({ first_name:'', middle_name:'', last_name:'', age:'', birthday:'', contact_number:'', address:'', email:'', password:'', confirm:'' })
+                        // Automatically refresh the students table
+                        fetchStudents()
                       } catch (e) {
                         setStudentStatus(e.message || 'Error')
                       }

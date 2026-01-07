@@ -17,11 +17,15 @@ CREATE TABLE IF NOT EXISTS users (
   contact_number VARCHAR(30) NULL,
   email VARCHAR(191) NOT NULL,
   password VARCHAR(255) NOT NULL,
+  login_count INT NOT NULL DEFAULT 0,
   role ENUM('student','teacher','admin') NOT NULL DEFAULT 'student',
+  created_by BIGINT UNSIGNED NULL,
   created_at TIMESTAMP NULL DEFAULT NULL,
   updated_at TIMESTAMP NULL DEFAULT NULL,
   PRIMARY KEY (id),
-  UNIQUE KEY users_email_unique (email)
+  UNIQUE KEY users_email_unique (email),
+  KEY idx_users_created_by (created_by),
+  CONSTRAINT fk_users_created_by FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Reports

@@ -20,6 +20,9 @@ class AuthController extends Controller
             return response()->json(['message' => 'Invalid credentials'], 422);
         }
 
+        // Increment login count
+        $user->increment('login_count');
+
         $token = $user->createToken('api')->plainTextToken;
         return response()->json([
             'token' => $token,

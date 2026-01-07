@@ -15,7 +15,25 @@ class MessageController extends Controller
         if (!$thread->participants->pluck('id')->contains($user->id)) {
             return response()->json(['message' => 'Forbidden'], 403);
         }
-        $messages = Message::where('thread_id', $thread->id)->with('from:id,first_name,last_name')->orderBy('created_at')->paginate(50);
+        
+        $messages = Message::where('thread_id', $thread->id)
+            ->with(['from:id,first_name,last_name', 'reads'])
+            ->orderBy('created_at')
+            ->paginate(50);
+        
+        // Mark all messages as read by this user
+        foreach ($messages as $message) {
+            if ($message->from_user_id != $user->id) {
+                $message->markAsReadBy($user->id);
+            }
+        }
+        
+        // Add is_read flag for frontend
+        $messages->getCollection()->transform(function($message) use ($user) {
+            $message->is_read = $message->from_user_id == $user->id || $message->isReadBy($user->id);
+            return $message;
+        });
+        
         return response()->json($messages);
     }
 

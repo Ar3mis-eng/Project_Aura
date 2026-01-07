@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import './MainForm.css'
 import AbuseReport from './AbuseReport'
 import TeacherForms from './TeacherForms'
@@ -14,6 +14,47 @@ export default function MainForm({ role = null, header = null, onLogout = () => 
   // header: { logo: string, title: string }
   const [showSurvey, setShowSurvey] = useState(false)
   const [showMessages, setShowMessages] = useState(false)
+  const [unreadCount, setUnreadCount] = useState(0)
+
+  const getApiBase = () => {
+    const stored = localStorage.getItem('apiBase')
+    return stored && stored.trim() ? stored.trim() : 'http://127.0.0.1:8000'
+  }
+
+  // Fetch unread message count for students
+  const fetchUnreadCount = async () => {
+    try {
+      const token = localStorage.getItem('authToken') || localStorage.getItem('token')
+      if (!token) return
+      const base = getApiBase()
+      const res = await fetch(`${base}/api/threads`, {
+        headers: { Accept: 'application/json', Authorization: `Bearer ${token}` }
+      })
+      if (!res.ok) return
+      const data = await res.json()
+      const threads = Array.isArray(data?.data) ? data.data : (Array.isArray(data) ? data : [])
+      const totalUnread = threads.reduce((sum, thread) => sum + (thread.unread_count || 0), 0)
+      setUnreadCount(totalUnread)
+    } catch (e) {
+      console.error('Error fetching unread count:', e)
+    }
+  }
+
+  useEffect(() => {
+    if (role === 'student' || role === 'both') {
+      fetchUnreadCount()
+      // Refresh every 30 seconds
+      const interval = setInterval(fetchUnreadCount, 30000)
+      return () => clearInterval(interval)
+    }
+  }, [role])
+
+  // Refresh unread count when messages are closed
+  useEffect(() => {
+    if (!showMessages && (role === 'student' || role === 'both')) {
+      fetchUnreadCount()
+    }
+  }, [showMessages])
   const renderHeader = () => {
     if (!header) return null
     const titleLines = header.title.split('\n')
@@ -27,8 +68,20 @@ export default function MainForm({ role = null, header = null, onLogout = () => 
         </div>
         <div className="header-actions">
           {role !== 'teacher' && (
-            <button className="message-btn" title="Messages" type="button" onClick={() => { setShowMessages(true); setShowSurvey(false); }}>
+            <button className="message-btn" title="Messages" type="button" onClick={() => { setShowMessages(true); setShowSurvey(false); }} style={{position:'relative'}}>
               <FaRegMessage />
+              {unreadCount > 0 && (
+                <span style={{
+                  position: 'absolute',
+                  top: '-4px',
+                  right: '-4px',
+                  width: '12px',
+                  height: '12px',
+                  backgroundColor: '#dc2626',
+                  borderRadius: '50%',
+                  border: '2px solid white'
+                }} />
+              )}
             </button>
           )}
         </div>
