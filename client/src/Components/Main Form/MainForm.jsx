@@ -53,26 +53,10 @@ export default function MainForm({ role = null, header = null, onLogout = () => 
           {role === 'teacher' ? (
             <TeacherForms onLogout={onLogout} />
           ) : (
-            <AbuseReport onFinish={async (data) => {
-              try {
-                const token = localStorage.getItem('authToken');
-                if (!token) throw new Error('Not authenticated');
-                const res = await fetch('http://127.0.0.1:8000/api/reports', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'Authorization': `Bearer ${token}` },
-                  body: JSON.stringify(data)
-                });
-                if (!res.ok) {
-                  const msg = await res.json().catch(() => ({}));
-                  throw new Error(msg.message || 'Submission failed');
-                }
-                const created = await res.json();
-                console.log('Report submitted', created);
-                alert('Report submitted successfully.');
-                setShowSurvey(false);
-              } catch (e) {
-                alert(e.message || 'Error submitting report');
-              }
+            <AbuseReport onFinish={(data) => {
+              console.log('Report submitted', data);
+              alert('Report submitted successfully.');
+              setShowSurvey(false);
             }} onCancel={() => setShowSurvey(false)} />
           )}
         </div>

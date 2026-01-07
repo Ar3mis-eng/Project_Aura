@@ -12,12 +12,20 @@ export default function TeacherForms({ onLogout = () => {} }) {
   const [showMenu, setShowMenu] = useState(false)
   const menuRef = useRef(null)
 
-  // Messages CRUD
-  const [messages, setMessages] = useState(() => {
-    try { const raw = localStorage.getItem('teacher_messages'); return raw ? JSON.parse(raw) : [] } catch { return [] }
-  })
-  const [compose, setCompose] = useState({ id: null, recipient: '', subject: '', body: '', label: '' })
-  const [editingId, setEditingId] = useState(null)
+  // Messages CRUD - now using threads from backend
+  const [threads, setThreads] = useState([])
+  const [threadsLoading, setThreadsLoading] = useState(false)
+  const [threadsError, setThreadsError] = useState('')
+  const [compose, setCompose] = useState({ id: null, recipientId: null, recipient: '', subject: '', body: '' })
+  const [selectedThread, setSelectedThread] = useState(null)
+  const [threadMessages, setThreadMessages] = useState([])
+  const [messagesLoading, setMessagesLoading] = useState(false)
+  const [showCompose, setShowCompose] = useState(false)
+  const [messagesMenuOpen, setMessagesMenuOpen] = useState(false)
+  const messagesMenuRef = useRef(null)
+  const [folder, setFolder] = useState('Inbox')
+  const [search, setSearch] = useState('')
+  const [replyText, setReplyText] = useState('')
 
   // Reports list from backend (fallback to local cache)
   const [reports, setReports] = useState(() => {
@@ -114,6 +122,7 @@ export default function TeacherForms({ onLogout = () => {} }) {
   }
 
   useEffect(() => { if (view === 'students') fetchStudents() }, [view])
+  useEffect(() => { if (showCompose && students.length === 0) fetchStudents() }, [showCompose])
 
   // Close menu when clicking outside
   useEffect(() => {
@@ -124,42 +133,111 @@ export default function TeacherForms({ onLogout = () => {} }) {
     return () => document.removeEventListener('mousedown', handleClickOutside)
   }, [])
 
-  useEffect(() => { localStorage.setItem('teacher_messages', JSON.stringify(messages)) }, [messages])
   useEffect(() => { localStorage.setItem('teacher_reports', JSON.stringify(reports)) }, [reports])
   useEffect(() => { localStorage.setItem('teacher_profile', JSON.stringify(profile)) }, [profile])
   useEffect(() => { localStorage.setItem('customQuestionSets', JSON.stringify(customSets)) }, [customSets])
 
-  // Messages handlers
-  const [showCompose, setShowCompose] = useState(false)
-  const [messagesMenuOpen, setMessagesMenuOpen] = useState(false)
-  const messagesMenuRef = useRef(null)
-  const [folder, setFolder] = useState('Inbox')
-  const startCompose = () => { setCompose({ id: Date.now(), recipient:'', subject:'', body:'', label:'' }); setEditingId(null); setSelectedMessageId(null); setView('messages'); setShowCompose(true) }
-  const saveMessage = () => {
-    if (!compose.recipient || !compose.subject) return
-    if (editingId) {
-      setMessages(prev => prev.map(m => m.id === editingId ? { ...m, ...compose } : m))
-      setEditingId(null)
-    } else {
-      setMessages(prev => [...prev, { ...compose, id: compose.id }])
+  // Messages handlers - thread-based
+  const fetchThreads = async () => {
+    try {
+      setThreadsLoading(true); setThreadsError('')
+      const token = localStorage.getItem('authToken') || localStorage.getItem('token')
+      if (!token) { setThreadsLoading(false); setThreadsError('Not authenticated'); return }
+      const base = getApiBase()
+      const res = await fetch(`${base}/api/threads`, { headers: { Accept:'application/json', Authorization: `Bearer ${token}` } })
+      if (!res.ok) throw new Error('Failed to load threads')
+      const data = await res.json()
+      setThreads(Array.isArray(data?.data) ? data.data : (Array.isArray(data) ? data : []))
+    } catch (e) {
+      setThreadsError(e.message || 'Error loading threads')
+    } finally {
+      setThreadsLoading(false)
     }
-    setCompose({ id: null, recipient:'', subject:'', body:'', label:'' })
-    setShowCompose(false)
   }
-  const editMessage = (id) => { const m = messages.find(x=>x.id===id); if (m) { setCompose(m); setEditingId(id); setShowCompose(true); setView('messages') } }
-  const deleteMessage = (id) => { setMessages(prev => prev.filter(m => m.id !== id)) }
-  const [selectedMessageId, setSelectedMessageId] = useState(null)
-  const selectMessage = (id) => { setSelectedMessageId(id); setView('messages') }
-  // ensure menu closes when selecting
-  const selectMessageMobile = (id) => { setSelectedMessageId(id); setView('messages'); setShowMenu(false) }
-  const toggleLabelColor = (id) => {
-    setMessages(prev => prev.map(m => {
-      if (m.id !== id) return m
-      const next = m._color === 'yellow' ? 'green' : m._color === 'green' ? 'red' : m._color === 'red' ? null : 'yellow'
-      return { ...m, _color: next }
-    }))
+
+  const fetchThreadMessages = async (threadId) => {
+    try {
+      setMessagesLoading(true)
+      const token = localStorage.getItem('authToken') || localStorage.getItem('token')
+      const base = getApiBase()
+      const res = await fetch(`${base}/api/threads/${threadId}/messages`, { headers: { Accept:'application/json', Authorization: `Bearer ${token}` } })
+      if (!res.ok) throw new Error('Failed to load messages')
+      const data = await res.json()
+      setThreadMessages(Array.isArray(data?.data) ? data.data : (Array.isArray(data) ? data : []))
+    } catch (e) {
+      alert('Error loading messages: ' + e.message)
+    } finally {
+      setMessagesLoading(false)
+    }
   }
-  const setLabelName = (id, name) => { setMessages(prev => prev.map(m => m.id===id ? { ...m, label: name } : m)) }
+
+  const startCompose = () => { 
+    setCompose({ id: null, recipientId: null, recipient:'', subject:'', body:'' })
+    setSelectedThread(null)
+    setView('messages')
+    setShowCompose(true)
+  }
+  
+  const saveMessage = async () => {
+    if (!compose.recipientId || !compose.subject || !compose.body) {
+      alert('Please fill in all fields')
+      return
+    }
+    try {
+      const token = localStorage.getItem('authToken') || localStorage.getItem('token')
+      const base = getApiBase()
+      // Create new thread
+      const threadRes = await fetch(`${base}/api/threads`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept:'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ subject: compose.subject, participant_ids: [compose.recipientId] })
+      })
+      if (!threadRes.ok) throw new Error('Failed to create thread')
+      const thread = await threadRes.json()
+      // Send first message
+      const msgRes = await fetch(`${base}/api/threads/${thread.id}/messages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept:'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ body: compose.body })
+      })
+      if (!msgRes.ok) throw new Error('Failed to send message')
+      setCompose({ id: null, recipientId: null, recipient:'', subject:'', body:'' })
+      setShowCompose(false)
+      fetchThreads()
+    } catch (e) {
+      alert(e.message || 'Error sending message')
+    }
+  }
+
+  const selectThread = async (thread) => {
+    setSelectedThread(thread)
+    setView('messages')
+    await fetchThreadMessages(thread.id)
+  }
+
+  const selectThreadMobile = async (thread) => {
+    setSelectedThread(thread)
+    setView('messages')
+    setShowMenu(false)
+    await fetchThreadMessages(thread.id)
+  }
+
+  const sendReply = async (body) => {
+    if (!selectedThread || !body.trim()) return
+    try {
+      const token = localStorage.getItem('authToken') || localStorage.getItem('token')
+      const base = getApiBase()
+      const res = await fetch(`${base}/api/threads/${selectedThread.id}/messages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept:'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ body })
+      })
+      if (!res.ok) throw new Error('Failed to send message')
+      await fetchThreadMessages(selectedThread.id)
+    } catch (e) {
+      alert('Error sending reply: ' + e.message)
+    }
+  }
 
   // Reports handlers
   const deleteReport = (id) => { setReports(prev => prev.filter(r => r.id !== id)) }
@@ -186,6 +264,7 @@ export default function TeacherForms({ onLogout = () => {} }) {
   }
 
   useEffect(() => { if (view === 'reports') fetchReports() }, [view])
+  useEffect(() => { if (view === 'messages') fetchThreads() }, [view])
 
   // Report detail view (modal)
   const [viewingReport, setViewingReport] = useState(null)
@@ -238,10 +317,8 @@ export default function TeacherForms({ onLogout = () => {} }) {
   const handleFolderSelect = (f) => {
     setFolder(f)
     setMessagesMenuOpen(false)
-    setSelectedMessageId(null)
+    setSelectedThread(null)
   }
-
-  const [search, setSearch] = useState('')
 
   // Profile edit mode
   const [editingProfile, setEditingProfile] = useState(false)
@@ -409,10 +486,10 @@ export default function TeacherForms({ onLogout = () => {} }) {
 
             {view === 'messages' && (
               <>
-              {/* Mobile: show list or single message full-width. Desktop: three-column. */}
+              {/* Mobile: show list or single thread full-width. Desktop: three-column. */}
               {isMobile ? (
                 <div className="messages-mobile card">
-                  {!selectedMessageId ? (
+                  {!selectedThread ? (
                     <>
                         <div className="messages-mobile-wrapper">
                           <div className="messages-top">
@@ -421,45 +498,87 @@ export default function TeacherForms({ onLogout = () => {} }) {
                             <button className="folder-btn-top" onClick={()=>setMessagesMenuOpen(s=>!s)}><IoMdMenu/></button>
                             {messagesMenuOpen && (
                               <div className="folder-list">
-                                {['Inbox','Deleted','Sent','Drafts'].map(f=> (
+                                {['Inbox','Sent'].map(f=> (
                                   <div key={f} className="folder-item" onClick={()=>handleFolderSelect(f)}>{f}</div>
                                 ))}
                               </div>
                             )}
                           </div>
-                              <input className="msg-search" placeholder="Search messages" value={search} onChange={e=>setSearch(e.target.value)} />
+                              <input className="msg-search" placeholder="Search conversations" value={search} onChange={e=>setSearch(e.target.value)} />
                             </div>
                           </div>
 
                           <div className="messages-list-header">
-                            <h3>{folder}</h3>
+                            <h3>Conversations</h3>
                             <div className="list-actions">
-                              <button className="btn-ghost" onClick={() => { setMessages([]) }}>Clear</button>
+                              <button className="btn-ghost" onClick={fetchThreads}>Refresh</button>
                             </div>
                           </div>
 
                           <div className="messages-list">
-                            {messages.filter(m=> ((m._folder||'Inbox') === folder) && m.subject.toLowerCase().includes(search.toLowerCase())).length === 0 && <div className="empty">No messages yet.</div>}
-                            {messages.filter(m=> ((m._folder||'Inbox') === folder) && m.subject.toLowerCase().includes(search.toLowerCase())).map(m => (
-                              <div key={m.id} className={`mail-item`} onClick={() => selectMessageMobile(m.id)}>
-                                <div className="mail-left">
-                                  <div className="mail-recipient">{m.recipient}</div>
-                                  <div className="mail-subject">{m.subject}</div>
-                                </div>
-                                <div className="mail-right">
-                                  <div className={`label-chip ${m._color||''}`} onClick={(e)=>{ e.stopPropagation(); toggleLabelColor(m.id) }} />
-                                  <div className="msg-time">{m.time||''}</div>
-                                </div>
-                              </div>
-                            ))}
+                            {threadsLoading ? (
+                              <div className="empty">Loading...</div>
+                            ) : threadsError ? (
+                              <div className="empty" style={{color:'#b91c1c'}}>{threadsError}</div>
+                            ) : threads.filter(t => t.subject?.toLowerCase().includes(search.toLowerCase())).length === 0 ? (
+                              <div className="empty">No conversations yet.</div>
+                            ) : (
+                              threads.filter(t => t.subject?.toLowerCase().includes(search.toLowerCase())).map(t => {
+                                const participants = Array.isArray(t.participants) ? t.participants.map(p => `${p.first_name||''} ${p.last_name||''}`).join(', ') : ''
+                                const lastMsg = Array.isArray(t.messages) && t.messages.length > 0 ? t.messages[0].body : ''
+                                return (
+                                  <div key={t.id} className="mail-item" onClick={() => selectThreadMobile(t)}>
+                                    <div className="mail-left">
+                                      <div className="mail-recipient">{participants}</div>
+                                      <div className="mail-subject">{t.subject}</div>
+                                      {lastMsg && <div className="mail-preview">{lastMsg.slice(0, 50)}{lastMsg.length > 50 ? '...' : ''}</div>}
+                                    </div>
+                                    <div className="mail-right">
+                                      <div className="msg-time">{t.updated_at ? new Date(t.updated_at).toLocaleString() : ''}</div>
+                                    </div>
+                                  </div>
+                                )
+                              })
+                            )}
                           </div>
                         </div>
                         <button className="btn-compose-floating" onClick={startCompose} title="New message">+</button>
                     </>
                   ) : (
                     <div className="message-view-mobile">
-                      <div className="mobile-view-header"><button className="btn-ghost" onClick={() => setSelectedMessageId(null)}>Back</button><div className="mobile-view-actions"><button className="btn-link" onClick={()=>editMessage(selectedMessageId)}>Edit</button><button className="btn-link danger" onClick={()=>deleteMessage(selectedMessageId)}>Delete</button></div></div>
-                      {(() => { const msg = messages.find(x=>x.id===selectedMessageId); if (!msg) return <div className="empty">Message not found</div>; return (<div><h4>{msg.subject}</h4><div className="view-meta">{msg.recipient} • {msg.time}</div><div className="view-body">{msg.body||<em>No content</em>}</div><div className="label-edit"><input placeholder="Label name" value={msg.label||''} onChange={(e)=>setLabelName(msg.id, e.target.value)} /></div></div>) })()}
+                      <div className="mobile-view-header">
+                        <button className="btn-ghost" onClick={() => setSelectedThread(null)}>Back</button>
+                        <div className="mobile-view-actions">
+                          <strong>{selectedThread.subject}</strong>
+                        </div>
+                      </div>
+                      <div className="thread-messages-container">
+                        {messagesLoading ? (
+                          <div className="empty">Loading...</div>
+                        ) : threadMessages.length === 0 ? (
+                          <div className="empty">No messages in this thread.</div>
+                        ) : (
+                          <div className="thread-messages">
+                            {threadMessages.map(msg => {
+                              const from = msg.from ? `${msg.from.first_name||''} ${msg.from.last_name||''}`.trim() : 'Unknown'
+                              return (
+                                <div key={msg.id} className="thread-message">
+                                  <div className="msg-from">{from}</div>
+                                  <div className="msg-body">{msg.body}</div>
+                                  <div className="msg-time">{msg.created_at ? new Date(msg.created_at).toLocaleString() : ''}</div>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        )}
+                        <div className="reply-section">
+                          <textarea placeholder="Type your reply..." value={replyText} onChange={e=>setReplyText(e.target.value)} rows={3} />
+                          <button className="btn-primary" onClick={async () => {
+                            await sendReply(replyText)
+                            setReplyText('')
+                          }}>Send</button>
+                        </div>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -469,61 +588,84 @@ export default function TeacherForms({ onLogout = () => {} }) {
                     <div className="gmail-actions card">
                       <button className="btn-primary" onClick={startCompose}>Compose</button>
                       <div className="gmail-folders">
-                        <button className="folder">Inbox</button>
-                        <button className="folder">Sent</button>
-                        <button className="folder">Starred</button>
-                        <button className="folder">Trash</button>
+                        <button className="folder" onClick={fetchThreads}>Refresh</button>
                       </div>
                     </div>
                   </div>
 
                   <div className="gmail-list card">
                     <div className="messages-list-header">
-                      <h3>Inbox</h3>
+                      <h3>Conversations</h3>
                       <div className="list-actions">
-                        <button className="btn-ghost" onClick={() => { setMessages([]) }}>Clear</button>
+                        <input className="msg-search" placeholder="Search" value={search} onChange={e=>setSearch(e.target.value)} style={{marginRight:'0.5rem'}} />
                       </div>
                     </div>
                     <div className="gmail-table">
                       <div className="gmail-row header">
-                        <div className="col-label"></div>
-                        <div className="col-recipient">Recipient</div>
+                        <div className="col-recipient">Participants</div>
                         <div className="col-subject">Subject</div>
-                        <div className="col-date">Date</div>
+                        <div className="col-date">Updated</div>
                       </div>
-                      {messages.length === 0 && <div className="empty">No messages yet.</div>}
-                      {messages.map(m => (
-                        <div key={m.id} className={`gmail-row ${selectedMessageId===m.id? 'selected':''}`} onClick={() => selectMessage(m.id)}>
-                          <div className="col-label">
-                            <button className={`label-chip ${m._color||''}`} onClick={(e)=>{ e.stopPropagation(); toggleLabelColor(m.id) }} title="Change color"></button>
-                          </div>
-                          <div className="col-recipient">{m.recipient}</div>
-                          <div className="col-subject">{m.subject}{m.label && <span className="label-name">{m.label}</span>}</div>
-                          <div className="col-date">{m.time || ''}</div>
-                        </div>
-                      ))}
+                      {threadsLoading ? (
+                        <div className="empty">Loading...</div>
+                      ) : threadsError ? (
+                        <div className="empty" style={{color:'#b91c1c'}}>{threadsError}</div>
+                      ) : threads.filter(t => t.subject?.toLowerCase().includes(search.toLowerCase())).length === 0 ? (
+                        <div className="empty">No conversations yet.</div>
+                      ) : (
+                        threads.filter(t => t.subject?.toLowerCase().includes(search.toLowerCase())).map(t => {
+                          const participants = Array.isArray(t.participants) ? t.participants.map(p => `${p.first_name||''} ${p.last_name||''}`).join(', ') : ''
+                          return (
+                            <div key={t.id} className={`gmail-row ${selectedThread?.id===t.id? 'selected':''}`} onClick={() => selectThread(t)}>
+                              <div className="col-recipient">{participants}</div>
+                              <div className="col-subject">{t.subject}</div>
+                              <div className="col-date">{t.updated_at ? new Date(t.updated_at).toLocaleString() : ''}</div>
+                            </div>
+                          )
+                        })
+                      )}
                     </div>
                   </div>
 
                   <div className="gmail-view card">
-                    {selectedMessageId ? (
-                      (() => {
-                        const msg = messages.find(x=>x.id===selectedMessageId)
-                        if (!msg) return <div className="empty">Message not found</div>
-                        return (
-                          <div>
-                            <div className="view-header"><strong>{msg.subject}</strong><div className="view-meta">{msg.recipient} • {msg.time}</div></div>
-                            <div className="view-body">{msg.body || <em>No content</em>}</div>
-                            <div className="view-actions">
-                              <button className="btn-link" onClick={()=>editMessage(msg.id)}>Edit</button>
-                              <button className="btn-link danger" onClick={()=>deleteMessage(msg.id)}>Delete</button>
-                              <div className="label-edit"><input placeholder="Label name" value={msg.label||''} onChange={(e)=>setLabelName(msg.id, e.target.value)} /></div>
-                            </div>
+                    {selectedThread ? (
+                      <div>
+                        <div className="view-header">
+                          <strong>{selectedThread.subject}</strong>
+                          <div className="view-meta">
+                            {Array.isArray(selectedThread.participants) ? selectedThread.participants.map(p => `${p.first_name||''} ${p.last_name||''}`).join(', ') : ''}
                           </div>
-                        )
-                      })()
+                        </div>
+                        <div className="thread-messages-container" style={{maxHeight:'400px', overflowY:'auto', marginBottom:'1rem'}}>
+                          {messagesLoading ? (
+                            <div className="empty">Loading...</div>
+                          ) : threadMessages.length === 0 ? (
+                            <div className="empty">No messages yet.</div>
+                          ) : (
+                            <div className="thread-messages">
+                              {threadMessages.map(msg => {
+                                const from = msg.from ? `${msg.from.first_name||''} ${msg.from.last_name||''}`.trim() : 'Unknown'
+                                return (
+                                  <div key={msg.id} className="thread-message" style={{marginBottom:'1rem', padding:'0.75rem', background:'#f9fafb', borderRadius:'0.5rem'}}>
+                                    <div style={{fontWeight:'600', marginBottom:'0.25rem'}}>{from}</div>
+                                    <div style={{marginBottom:'0.25rem'}}>{msg.body}</div>
+                                    <div style={{fontSize:'0.75rem', color:'#6b7280'}}>{msg.created_at ? new Date(msg.created_at).toLocaleString() : ''}</div>
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          )}
+                        </div>
+                        <div className="reply-section">
+                          <textarea placeholder="Type your reply..." value={replyText} onChange={e=>setReplyText(e.target.value)} rows={3} style={{width:'100%', marginBottom:'0.5rem', padding:'0.5rem', border:'1px solid #d1d5db', borderRadius:'0.375rem'}} />
+                          <button className="btn-primary" onClick={async () => {
+                            await sendReply(replyText)
+                            setReplyText('')
+                          }}>Send Reply</button>
+                        </div>
+                      </div>
                     ) : (
-                      <div className="empty">Select a message to view</div>
+                      <div className="empty">Select a conversation to view</div>
                     )}
                   </div>
                 </div>
@@ -536,18 +678,27 @@ export default function TeacherForms({ onLogout = () => {} }) {
               <div className="compose-modal" role="dialog">
                 <div className="compose-card">
                   <div className="compose-header">
-                    <strong>{editingId ? 'Edit Message' : 'New Message'}</strong>
+                    <strong>New Message</strong>
                     <button className="btn-ghost" onClick={() => setShowCompose(false)}>Close</button>
                   </div>
-                  <label>To</label>
-                  <input value={compose.recipient} onChange={e => setCompose(c=>({...c, recipient: e.target.value}))} />
+                  <label>To (Student)</label>
+                  <select value={compose.recipientId||''} onChange={e => {
+                    const id = parseInt(e.target.value)
+                    const student = students.find(s => s.id === id)
+                    setCompose(c=>({...c, recipientId: id, recipient: student ? `${student.first_name} ${student.last_name}` : ''}))
+                  }}>
+                    <option value="">Select a student</option>
+                    {students.map(s => (
+                      <option key={s.id} value={s.id}>{s.first_name} {s.last_name} ({s.email})</option>
+                    ))}
+                  </select>
                   <label>Subject</label>
                   <input value={compose.subject} onChange={e => setCompose(c=>({...c, subject: e.target.value}))} />
                   <label>Message</label>
-                  <textarea value={compose.body} onChange={e => setCompose(c=>({...c, body: e.target.value}))} />
+                  <textarea value={compose.body} onChange={e => setCompose(c=>({...c, body: e.target.value}))} rows={6} />
                   <div className="compose-actions">
                     <button className="btn-primary" onClick={saveMessage}>Send</button>
-                    <button className="btn-ghost" onClick={() => { setShowCompose(false); setCompose({ id: null, recipient:'', subject:'', body:'', label:'' }); setEditingId(null); }}>Cancel</button>
+                    <button className="btn-ghost" onClick={() => { setShowCompose(false); setCompose({ id: null, recipientId: null, recipient:'', subject:'', body:'' }); }}>Cancel</button>
                   </div>
                 </div>
               </div>
