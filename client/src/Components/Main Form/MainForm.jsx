@@ -15,6 +15,14 @@ export default function MainForm({ role = null, header = null, onLogout = () => 
   const [showSurvey, setShowSurvey] = useState(false)
   const [showMessages, setShowMessages] = useState(false)
   const [unreadCount, setUnreadCount] = useState(0)
+  const [introShown, setIntroShown] = useState(false)
+
+  // Auto-show survey (with intro slides) for students on every login
+  useEffect(() => {
+    if (role === 'student' || role === 'both') {
+      setShowSurvey(true)
+    }
+  }, [role])
 
   const getApiBase = () => {
     const stored = localStorage.getItem('apiBase')
@@ -106,11 +114,18 @@ export default function MainForm({ role = null, header = null, onLogout = () => 
           {role === 'teacher' ? (
             <TeacherForms onLogout={onLogout} />
           ) : (
-            <AbuseReport onFinish={(data) => {
-              console.log('Report submitted', data);
-              alert('Report submitted successfully.');
-              setShowSurvey(false);
-            }} onCancel={() => setShowSurvey(false)} />
+            <AbuseReport 
+              showIntro={!introShown}
+              onFinish={(data) => {
+                console.log('Report submitted', data);
+                alert('Report submitted successfully.');
+                setShowSurvey(false);
+              }} 
+              onCancel={() => {
+                setIntroShown(true);
+                setShowSurvey(false);
+              }} 
+            />
           )}
         </div>
       )}

@@ -8,7 +8,12 @@ const getApiBase = () => {
   return stored && stored.trim() ? stored.trim() : 'http://127.0.0.1:8000'
 }
 
-export default function AbuseReport({ onFinish = () => {}, onCancel = () => {} }) {
+export default function AbuseReport({ onFinish = () => {}, onCancel = () => {}, showIntro: showIntroProp = true }) {
+  // Introduction slides state - controlled by prop
+  const [showIntro, setShowIntro] = useState(showIntroProp)
+  const [introSlide, setIntroSlide] = useState(0)
+  
+  // Main survey state
   const [step, setStep] = useState(0)
   const [type, setType] = useState('Physical')
   const [answers, setAnswers] = useState({})
@@ -72,6 +77,34 @@ export default function AbuseReport({ onFinish = () => {}, onCancel = () => {} }
   const questionSet = questionSetsMap[type] || []
   // flatten steps: choose -> each question index -> review
   const totalSteps = 1 + questionSet.length + 1
+
+  const handleIntroNext = () => {
+    console.log('Next button clicked! Current slide:', introSlide)
+    if (introSlide < 4) {
+      setIntroSlide(prevSlide => {
+        console.log('Moving from slide', prevSlide, 'to', prevSlide + 1)
+        return prevSlide + 1
+      })
+    } else {
+      console.log('Last slide - closing intro and returning to main')
+      onCancel() // Close survey and return to report button
+    }
+  }
+
+  const handleIntroPrevious = () => {
+    console.log('Previous button clicked! Current slide:', introSlide)
+    if (introSlide > 0) {
+      setIntroSlide(prevSlide => {
+        console.log('Moving back from slide', prevSlide, 'to', prevSlide - 1)
+        return prevSlide - 1
+      })
+    }
+  }
+
+  const handleSkipIntro = () => {
+    console.log('Skip button clicked - returning to main')
+    onCancel() // Close survey and return to report button
+  }
 
   const handleChoice = (e) => {
     setType(e.target.value)
@@ -149,18 +182,84 @@ export default function AbuseReport({ onFinish = () => {}, onCancel = () => {} }
     run()
   }
 
+  // Intro slides content
+  const introSlides = [
+    {
+      title: "Welcome to Your Safe Space 🌟",
+      icon: "🛡️",
+      content: "You are brave for being here. This is a safe place where your voice matters and you will be heard.",
+      bgColor: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+      emoji: "💙"
+    },
+    {
+      title: "Your Report Can Make a Difference ✨",
+      icon: "📢",
+      content: "Speaking up about abuse helps protect you and others. When you report, trained adults can help keep everyone safe. You're not alone in this journey.",
+      bgColor: "linear-gradient(135deg, #f093fb 0%, #f5576c 100%)",
+      emoji: "🌈"
+    },
+    {
+      title: "Why We Created This App 💡",
+      icon: "🏠",
+      content: "We built this app because every child deserves to feel safe and protected. Your wellbeing matters, and we want to make it easy for you to get help when you need it.",
+      bgColor: "linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)",
+      emoji: "🌟"
+    },
+    {
+      title: "How to Use This App 📱",
+      icon: "✍️",
+      content: "It's simple! Choose the type of situation you want to report, answer a few questions about what happened, and we'll make sure the right people know. You can take your time—there's no rush.",
+      bgColor: "linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)",
+      emoji: "👍"
+    },
+    {
+      title: "Let's Get Started 🚀",
+      icon: "💪",
+      content: "You're doing an amazing thing by speaking up. Remember, you are brave, you are strong, and you are not alone. Let's begin whenever you're ready.",
+      bgColor: "linear-gradient(135deg, #fa709a 0%, #fee140 100%)",
+      emoji: "🌻"
+    }
+  ]
+
   return (
     <div className="survey-container">
-      {loading && (
+      {/* Introduction Slides */}
+      {showIntro && (
+        <div className="intro-overlay">
+          <div className="intro-slide" style={{background: introSlides[introSlide].bgColor}}>
+            <div className="intro-icon">{introSlides[introSlide].icon}</div>
+            <h2 className="intro-title">{introSlides[introSlide].title}</h2>
+            <p className="intro-content">{introSlides[introSlide].content}</p>
+            <div className="intro-emoji">{introSlides[introSlide].emoji}</div>
+            <div className="intro-progress">
+              {introSlides.map((_, idx) => (
+                <div key={idx} className={`intro-dot ${idx === introSlide ? 'active' : ''} ${idx < introSlide ? 'completed' : ''}`}></div>
+              ))}
+            </div>
+            <div className="intro-actions">
+              {introSlide > 0 && (
+                <button className="intro-previous" onClick={handleIntroPrevious}>Previous</button>
+              )}
+              <button className="intro-skip" onClick={handleSkipIntro}>Skip</button>
+              <button className="intro-next" onClick={handleIntroNext}>
+                {introSlide === 4 ? "Get Started!" : "Next"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Loading State */}
+      {!showIntro && loading && (
         <div className="survey-step">
           <h3 className="survey-title">Loading question sets…</h3>
           {loadMsg && <div className="survey-error" style={{color:'#666'}}>{loadMsg}</div>}
         </div>
       )}
-      {!loading && (
+      {!showIntro && !loading && (
         <>
       {step === 0 && (
-        <div className="survey-step">
+        <div className="survey-step safe-space">
           <h3 className="survey-title">Select type of abuse</h3>
           <select value={type} onChange={handleChoice} className="survey-select" disabled={Object.keys(questionSetsMap).length === 0}>
             {Object.keys(questionSetsMap).sort((a, b) => {

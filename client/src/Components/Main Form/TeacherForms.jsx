@@ -704,6 +704,47 @@ export default function TeacherForms({ onLogout = () => {} }) {
           </div>
         </header>
 
+        {/* Desktop sidebar menu - Fixed on left */}
+        <aside className="teacher-sidebar">
+          <nav>
+            <button className={view === 'reports' ? 'active' : ''} onClick={() => setView('reports')} style={{position:'relative'}}>
+              Report Submitted
+              {newReportCount > 0 && (
+                <span style={{
+                  position: 'absolute',
+                  top: '50%',
+                  right: '12px',
+                  transform: 'translateY(-50%)',
+                  width: '8px',
+                  height: '8px',
+                  borderRadius: '50%',
+                  backgroundColor: '#ef4444'
+                }} />
+              )}
+            </button>
+            <button className={view === 'analytics' ? 'active' : ''} onClick={() => setView('analytics')}>Analytics</button>
+            <button className={view === 'messages' ? 'active' : ''} onClick={() => setView('messages')} style={{position:'relative'}}>
+              Messages
+              {unreadCount > 0 && (
+                <span style={{
+                  position: 'absolute',
+                  top: '50%',
+                  right: '12px',
+                  transform: 'translateY(-50%)',
+                  width: '8px',
+                  height: '8px',
+                  backgroundColor: '#dc2626',
+                  borderRadius: '50%'
+                }} />
+              )}
+            </button>
+            <button className={view === 'students' ? 'active' : ''} onClick={() => setView('students')}>Student Management</button>
+            <button className={view === 'add' ? 'active' : ''} onClick={() => setView('add')}>Add Questionnaire</button>
+            <button className={view === 'settings' ? 'active' : ''} onClick={() => setView('settings')}>Settings</button>
+            <button className="logout-btn" onClick={() => onLogout()}>Logout</button>
+          </nav>
+        </aside>
+
         <div className="teacher-content">
           {/* Welcome landing page */}
           {view === null && (
@@ -714,48 +755,6 @@ export default function TeacherForms({ onLogout = () => {} }) {
               </div>
             </div>
           )}
-
-          {/* Desktop sidebar menu */}
-          <aside className="teacher-sidebar">
-            <nav>
-              <button className={view === 'reports' ? 'active' : ''} onClick={() => setView('reports')} style={{position:'relative'}}>
-                Report Submitted
-                {newReportCount > 0 && (
-                  <span style={{
-                    position: 'absolute',
-                    top: '50%',
-                    right: '12px',
-                    transform: 'translateY(-50%)',
-                    width: '8px',
-                    height: '8px',
-                    borderRadius: '50%',
-                    backgroundColor: '#ef4444'
-                  }} />
-                )}
-              </button>
-              <button className={view === 'analytics' ? 'active' : ''} onClick={() => setView('analytics')}>Analytics</button>
-              <button className={view === 'messages' ? 'active' : ''} onClick={() => setView('messages')} style={{position:'relative'}}>
-                Messages
-                {unreadCount > 0 && (
-                  <span style={{
-                    position: 'absolute',
-                    top: '50%',
-                    right: '12px',
-                    transform: 'translateY(-50%)',
-                    width: '8px',
-                    height: '8px',
-                    backgroundColor: '#dc2626',
-                    borderRadius: '50%'
-                  }} />
-                )}
-              </button>
-              <button className={view === 'students' ? 'active' : ''} onClick={() => setView('students')}>Student Management</button>
-              <button className={view === 'add' ? 'active' : ''} onClick={() => setView('add')}>Add Questionnaire</button>
-              <button className={view === 'settings' ? 'active' : ''} onClick={() => setView('settings')}>Settings</button>
-              <button className="compose-btn-sidebar" onClick={startCompose}>Compose</button>
-              <button className="logout-btn" onClick={() => onLogout()}>Logout</button>
-            </nav>
-          </aside>
 
           {/* Main content panel */}
           {view !== null && (
@@ -1022,9 +1021,11 @@ export default function TeacherForms({ onLogout = () => {} }) {
                 <div className="messages-container">
                   <div className="messages-header">
                     <div className="messages-title">Messages</div>
-                    <div className="messages-actions">
-                      <button className="btn-primary" onClick={startCompose}>Compose</button>
-                    </div>
+                    {!selectedThread && (
+                      <div className="messages-actions">
+                        <button className="btn-primary" onClick={startCompose}>Compose</button>
+                      </div>
+                    )}
                   </div>
 
                   {!selectedThread ? (
@@ -1171,7 +1172,13 @@ export default function TeacherForms({ onLogout = () => {} }) {
                           <option value="choice">Choice</option>
                         </select>
                         <label className="small"><input type="checkbox" checked={q.required} onChange={e=>updateQuestionLine(q.id,{required:e.target.checked})} /> required</label>
-                        {q.type === 'choice' && <input placeholder="options,comma,separated" value={q.options} onChange={e=>updateQuestionLine(q.id,{options:e.target.value})} />}
+                        {q.type === 'choice' && (
+                          <div style={{display:'flex', flexDirection:'column', gap:'0.25rem'}}>
+                            <label style={{fontSize:'0.75rem', fontWeight:'600', color:'#64748b', textTransform:'uppercase', letterSpacing:'0.5px'}}>Multiple Choice Options</label>
+                            <input placeholder="Enter options separated by commas (e.g., Option 1, Option 2, Option 3)" value={q.options} onChange={e=>updateQuestionLine(q.id,{options:e.target.value})} />
+                            <span style={{fontSize:'0.75rem', color:'#94a3b8', fontStyle:'italic'}}>Separate each option with a comma</span>
+                          </div>
+                        )}
                         <button className="btn-link danger" onClick={()=>removeQuestionLine(q.id)}>Remove</button>
                       </div>
                     ))}
@@ -1280,9 +1287,9 @@ export default function TeacherForms({ onLogout = () => {} }) {
                       </thead>
                       <tbody>
                         {studentsLoading ? (
-                          <tr><td colSpan={3} className="empty">Loading...</td></tr>
+                          <tr><td colSpan={7} className="empty">Loading...</td></tr>
                         ) : filteredStudents.length === 0 ? (
-                          <tr><td colSpan={3} className="empty">No students found.</td></tr>
+                          <tr><td colSpan={7} className="empty">No students found.</td></tr>
                         ) : (
                           filteredStudents.map(s => (
                             <tr key={s.id}>

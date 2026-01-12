@@ -139,18 +139,465 @@
 }
 .report-btn:hover { transform: translateY(-2px); box-shadow: 0 6px 18px rgba(118,75,162,0.16); }
 
-/* Survey / abuse report styles */
-.survey-container { max-width: 720px; margin: 0 auto; }
-.survey-step { background: #fff; padding: 1rem; border-radius: 8px; box-shadow: 0 6px 18px rgba(0,0,0,0.06); }
-.survey-title { margin: 0 0 0.5rem; font-size: 1rem; }
-.survey-select, .survey-input { width: 100%; padding: 0.6rem; border:1px solid #ddd; border-radius:6px; }
-.survey-choices { display:flex; flex-direction:column; gap:0.5rem; }
-.survey-choice input { margin-right:0.5rem }
-.survey-actions { display:flex; gap:0.5rem; margin-top:0.75rem }
-.survey-next, .survey-back, .survey-submit, .survey-cancel { padding:0.5rem 0.75rem; border-radius:6px; border:none; cursor:pointer }
-.survey-next { background: #4b8ea2; color:#fff }
-.survey-back, .survey-cancel { background:#f3f4f6 }
-.survey-submit { background:#111827; color:#fff }
+/* Survey / abuse report styles - REDESIGNED CHILD-FRIENDLY */
+.survey-container { 
+  max-width: 100%; 
+  margin: 0 auto; 
+  padding: 1rem;
+}
+
+/* Introduction Slides - Child-Friendly & Safe Space */
+.intro-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  padding: 1rem;
+  animation: fadeIn 0.3s ease-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.intro-slide {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 24px;
+  padding: 2rem;
+  max-width: 500px;
+  width: 100%;
+  color: white;
+  text-align: center;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  animation: slideUp 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+  position: relative;
+  overflow: hidden;
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.intro-slide::before {
+  content: '';
+  position: absolute;
+  top: -50%;
+  right: -50%;
+  width: 200%;
+  height: 200%;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.1) 0%, transparent 70%);
+  animation: pulse 3s ease-in-out infinite;
+  pointer-events: none;
+  z-index: 0;
+}
+
+@keyframes pulse {
+  0%, 100% { transform: scale(1); opacity: 0.5; }
+  50% { transform: scale(1.1); opacity: 0.3; }
+}
+
+.intro-icon {
+  font-size: 4rem;
+  margin-bottom: 1rem;
+  animation: bounce 2s ease-in-out infinite;
+  position: relative;
+  z-index: 1;
+}
+
+@keyframes bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
+}
+
+.intro-title {
+  font-size: 1.75rem;
+  font-weight: 800;
+  margin-bottom: 1rem;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  line-height: 1.3;
+  position: relative;
+  z-index: 1;
+}
+
+.intro-content {
+  font-size: 1.1rem;
+  line-height: 1.6;
+  margin-bottom: 1.5rem;
+  opacity: 0.95;
+  font-weight: 500;
+  position: relative;
+  z-index: 1;
+}
+
+.intro-emoji {
+  font-size: 3rem;
+  margin: 1rem 0;
+  animation: rotate 3s ease-in-out infinite;
+  position: relative;
+  z-index: 1;
+}
+
+@keyframes rotate {
+  0%, 100% { transform: rotate(-5deg); }
+  50% { transform: rotate(5deg); }
+}
+
+.intro-progress {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: center;
+  margin: 1.5rem 0;
+  position: relative;
+  z-index: 1;
+}
+
+.intro-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.3);
+  transition: all 0.3s ease;
+}
+
+.intro-dot.active {
+  background: white;
+  width: 32px;
+  border-radius: 6px;
+}
+
+.intro-dot.completed {
+  background: rgba(255, 255, 255, 0.6);
+}
+
+.intro-actions {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+  margin-top: 1.5rem;
+  position: relative;
+  z-index: 1;
+  flex-wrap: wrap;
+}
+
+.intro-skip,
+.intro-next,
+.intro-previous {
+  padding: 0.875rem 2rem;
+  border-radius: 16px;
+  border: none;
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.intro-previous,
+.intro-skip {
+  background: rgba(255, 255, 255, 0.2);
+  color: white;
+  backdrop-filter: blur(10px);
+  border: 2px solid rgba(255, 255, 255, 0.3);
+}
+
+.intro-previous:hover,
+.intro-skip:hover {
+  background: rgba(255, 255, 255, 0.3);
+  transform: translateY(-2px);
+}
+
+.intro-next {
+  background: white;
+  color: #667eea;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
+}
+
+.intro-next:hover {
+  transform: translateY(-3px) scale(1.05);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.3);
+}
+
+/* Safe Space Survey Redesign */
+.survey-step.safe-space {
+  background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+  padding: 2rem;
+  border-radius: 24px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+  border: 3px solid #fbbf24;
+  position: relative;
+  overflow: hidden;
+}
+
+.survey-step.safe-space::before {
+  content: '🛡️';
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  font-size: 3rem;
+  opacity: 0.2;
+}
+
+.survey-step {
+  background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+  padding: 2rem;
+  border-radius: 24px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.08);
+  border: 2px solid #bae6fd;
+  margin-bottom: 1rem;
+}
+
+.survey-title {
+  margin: 0 0 1.5rem;
+  font-size: 1.5rem;
+  font-weight: 800;
+  color: #0c4a6e;
+  text-align: center;
+}
+
+.survey-select,
+.survey-input {
+  width: 100%;
+  padding: 1rem;
+  border: 3px solid #7dd3fc;
+  border-radius: 16px;
+  font-size: 1rem;
+  background: white;
+  transition: all 0.3s ease;
+}
+
+.survey-select:focus,
+.survey-input:focus {
+  outline: none;
+  border-color: #0ea5e9;
+  box-shadow: 0 0 0 4px rgba(14, 165, 233, 0.1);
+  transform: scale(1.02);
+}
+
+.survey-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.survey-choice {
+  padding: 1rem;
+  background: white;
+  border: 3px solid #e0f2fe;
+  border-radius: 16px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #0c4a6e;
+}
+
+.survey-choice:hover {
+  border-color: #0ea5e9;
+  background: #f0f9ff;
+  transform: translateX(4px);
+}
+
+.survey-choice input {
+  margin-right: 0.75rem;
+  width: 20px;
+  height: 20px;
+  cursor: pointer;
+}
+
+.survey-actions {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 1.5rem;
+  flex-wrap: wrap;
+}
+
+.survey-next,
+.survey-back,
+.survey-submit,
+.survey-cancel {
+  padding: 0.875rem 2rem;
+  border-radius: 16px;
+  border: none;
+  cursor: pointer;
+  font-size: 1rem;
+  font-weight: 700;
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  flex: 1;
+  min-width: 120px;
+}
+
+.survey-next {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: white;
+  box-shadow: 0 6px 20px rgba(16, 185, 129, 0.3);
+}
+
+.survey-next:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 10px 30px rgba(16, 185, 129, 0.4);
+}
+
+.survey-back,
+.survey-cancel {
+  background: linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%);
+  color: #374151;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+.survey-back:hover,
+.survey-cancel:hover {
+  background: linear-gradient(135deg, #e5e7eb 0%, #d1d5db 100%);
+  transform: translateY(-2px);
+}
+
+.survey-submit {
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  color: white;
+  box-shadow: 0 8px 24px rgba(59, 130, 246, 0.3);
+}
+
+.survey-submit:hover {
+  transform: translateY(-3px) scale(1.02);
+  box-shadow: 0 12px 32px rgba(59, 130, 246, 0.4);
+}
+
+.survey-review {
+  background: white;
+  padding: 1.5rem;
+  border-radius: 16px;
+  border: 2px solid #bae6fd;
+  margin-bottom: 1rem;
+}
+
+.survey-error {
+  background: #fee2e2;
+  color: #dc2626;
+  padding: 0.75rem 1rem;
+  border-radius: 12px;
+  margin-top: 0.75rem;
+  font-weight: 600;
+  border: 2px solid #fca5a5;
+}
+
+textarea.survey-input {
+  min-height: 100px;
+  resize: vertical;
+  font-family: inherit;
+  line-height: 1.5;
+}
+
+/* Mobile-First Responsive Design */
+@media (max-width: 480px) {
+  .intro-slide {
+    padding: 1.5rem;
+    border-radius: 20px;
+  }
+
+  .intro-icon {
+    font-size: 3rem;
+  }
+
+  .intro-title {
+    font-size: 1.4rem;
+  }
+
+  .intro-content {
+    font-size: 1rem;
+  }
+
+  .intro-emoji {
+    font-size: 2.5rem;
+  }
+
+  .intro-skip,
+  .intro-next,
+  .intro-previous {
+    padding: 0.75rem 1.5rem;
+    font-size: 0.9rem;
+  }
+
+  .survey-step,
+  .survey-step.safe-space {
+    padding: 1.5rem;
+    border-radius: 20px;
+  }
+
+  .survey-title {
+    font-size: 1.25rem;
+  }
+
+  .survey-select,
+  .survey-input {
+    padding: 0.875rem;
+    font-size: 0.95rem;
+  }
+
+  .survey-choice {
+    padding: 0.875rem;
+    font-size: 0.95rem;
+  }
+
+  .survey-next,
+  .survey-back,
+  .survey-submit,
+  .survey-cancel {
+    padding: 0.75rem 1.25rem;
+    font-size: 0.9rem;
+  }
+}
+
+@media (max-width: 375px) {
+  .intro-slide {
+    padding: 1.25rem;
+  }
+
+  .intro-title {
+    font-size: 1.25rem;
+  }
+
+  .intro-content {
+    font-size: 0.95rem;
+  }
+
+  .intro-actions {
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .intro-skip,
+  .intro-next,
+  .intro-previous {
+    width: 100%;
+  }
+
+  .survey-actions {
+    flex-direction: column;
+  }
+
+  .survey-next,
+  .survey-back,
+  .survey-submit,
+  .survey-cancel {
+    width: 100%;
+  }
+}
 
 
 /* small responsive tweaks */
@@ -183,6 +630,28 @@
 .send-btn:disabled { background:#9ca3af; cursor:not-allowed }
 .messages-note { font-size:0.85rem; color:#666; margin-top:0.5rem }
 .empty { padding:2rem; text-align:center; color:#6b7280; font-size:0.95rem }
+
+/* Message tabs */
+.tab-btn {
+  padding: 0.5rem 1rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  background: white;
+  color: #374151;
+  font-weight: 500;
+  cursor: pointer;
+  font-size: 0.875rem;
+  transition: all 0.2s ease;
+}
+.tab-btn:hover {
+  background: #f3f4f6;
+  border-color: #d1d5db;
+}
+.tab-btn.active {
+  background: #3b82f6;
+  color: white;
+  border-color: #3b82f6;
+}
 
 /* survey textarea adjustments */
 .survey-input { width: 100%; padding: 0.6rem; border:1px solid #ddd; border-radius:6px; }
