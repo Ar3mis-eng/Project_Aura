@@ -18,7 +18,6 @@ export default function Messages({ onClose = () => {} }) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [searchQuery, setSearchQuery] = useState('')
-  const [messageTab, setMessageTab] = useState('inbox') // inbox, drafts, deleted, sent
   const inputRef = useRef(null)
   const listRef = useRef(null)
 
@@ -175,26 +174,8 @@ export default function Messages({ onClose = () => {} }) {
 
   const currentUserId = getCurrentUserId()
 
-  // Filter threads based on search query and tab
+  // Filter threads based on search query
   const filteredThreads = threads.filter(t => {
-    // Tab filtering
-    if (messageTab === 'inbox') {
-      // Show only threads that are not deleted
-      if (t.deleted_at) return false
-    } else if (messageTab === 'sent') {
-      // Show threads where last message is from current user
-      if (t.deleted_at) return false
-      const lastMsg = Array.isArray(t.messages) && t.messages.length > 0 ? t.messages[0] : null
-      if (!lastMsg || parseInt(lastMsg.from_user_id) !== currentUserId) return false
-    } else if (messageTab === 'deleted') {
-      // Show only deleted threads
-      if (!t.deleted_at) return false
-    } else if (messageTab === 'drafts') {
-      // Show threads marked as drafts (if backend supports)
-      if (t.deleted_at || !t.is_draft) return false
-    }
-    
-    // Search filtering
     if (!searchQuery.trim()) return true
     
     const query = searchQuery.toLowerCase()
@@ -234,72 +215,6 @@ export default function Messages({ onClose = () => {} }) {
       {!selectedThread ? (
         <div className="threads-list">
           <div style={{padding:'1rem', borderBottom:'1px solid #e5e7eb'}}>
-            <div style={{display:'flex', gap:'0.5rem', marginBottom:'1rem', flexWrap:'wrap'}}>
-              <button 
-                className={messageTab === 'inbox' ? 'tab-btn active' : 'tab-btn'}
-                onClick={() => setMessageTab('inbox')}
-                style={{
-                  padding:'0.5rem 1rem',
-                  border:'1px solid #e5e7eb',
-                  borderRadius:'6px',
-                  backgroundColor: messageTab === 'inbox' ? '#3b82f6' : 'white',
-                  color: messageTab === 'inbox' ? 'white' : '#374151',
-                  fontWeight:'500',
-                  cursor:'pointer',
-                  fontSize:'0.875rem'
-                }}
-              >
-                Inbox
-              </button>
-              <button 
-                className={messageTab === 'sent' ? 'tab-btn active' : 'tab-btn'}
-                onClick={() => setMessageTab('sent')}
-                style={{
-                  padding:'0.5rem 1rem',
-                  border:'1px solid #e5e7eb',
-                  borderRadius:'6px',
-                  backgroundColor: messageTab === 'sent' ? '#3b82f6' : 'white',
-                  color: messageTab === 'sent' ? 'white' : '#374151',
-                  fontWeight:'500',
-                  cursor:'pointer',
-                  fontSize:'0.875rem'
-                }}
-              >
-                Sent
-              </button>
-              <button 
-                className={messageTab === 'drafts' ? 'tab-btn active' : 'tab-btn'}
-                onClick={() => setMessageTab('drafts')}
-                style={{
-                  padding:'0.5rem 1rem',
-                  border:'1px solid #e5e7eb',
-                  borderRadius:'6px',
-                  backgroundColor: messageTab === 'drafts' ? '#3b82f6' : 'white',
-                  color: messageTab === 'drafts' ? 'white' : '#374151',
-                  fontWeight:'500',
-                  cursor:'pointer',
-                  fontSize:'0.875rem'
-                }}
-              >
-                Drafts
-              </button>
-              <button 
-                className={messageTab === 'deleted' ? 'tab-btn active' : 'tab-btn'}
-                onClick={() => setMessageTab('deleted')}
-                style={{
-                  padding:'0.5rem 1rem',
-                  border:'1px solid #e5e7eb',
-                  borderRadius:'6px',
-                  backgroundColor: messageTab === 'deleted' ? '#3b82f6' : 'white',
-                  color: messageTab === 'deleted' ? 'white' : '#374151',
-                  fontWeight:'500',
-                  cursor:'pointer',
-                  fontSize:'0.875rem'
-                }}
-              >
-                Deleted
-              </button>
-            </div>
             <input 
               className="msg-search" 
               placeholder="Search conversations..." 
