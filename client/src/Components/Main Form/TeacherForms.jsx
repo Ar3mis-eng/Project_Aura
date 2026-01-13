@@ -6,7 +6,7 @@ import logo from '../Login/media/logo.png'
 export default function TeacherForms({ onLogout = () => {} }) {
   const getApiBase = () => {
     const stored = localStorage.getItem('apiBase')
-    return stored && stored.trim() ? stored.trim() : 'http://127.0.0.1:8000'
+    return stored && stored.trim() ? stored.trim() : (import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000')
   }
   const [view, setView] = useState(null) // null = welcome, or 'reports', 'messages', 'add', 'settings', 'students'
   const [showMenu, setShowMenu] = useState(false)
@@ -40,9 +40,12 @@ export default function TeacherForms({ onLogout = () => {} }) {
 
   // Settings / profile
   const [profile, setProfile] = useState(() => {
-    try { const raw = localStorage.getItem('teacher_profile'); return raw ? JSON.parse(raw) : { name:'', email:'', teacherId:'', img:'' } } catch { return { name:'', email:'', teacherId:'', img:'' } }
+    try { const raw = localStorage.getItem('teacher_profile'); return raw ? JSON.parse(raw) : { first_name:'', middle_name:'', last_name:'', email:'', contact_number:'', address:'', img:'' } } catch { return { first_name:'', middle_name:'', last_name:'', email:'', contact_number:'', address:'', img:'' } }
   })
   const [passwords, setPasswords] = useState({ current:'', new:'', confirm:'' })
+  const [profileLoading, setProfileLoading] = useState(false)
+  const [profileError, setProfileError] = useState('')
+  const [profileSuccess, setProfileSuccess] = useState('')
 
   // Analytics
   const [analytics, setAnalytics] = useState({ total_students: 0, total_teachers: 0, total_reports: 0, total_logins: 0 })
@@ -120,7 +123,7 @@ export default function TeacherForms({ onLogout = () => {} }) {
       setStudentsLoading(true); setStudentsError('')
       const token = localStorage.getItem('authToken')
       if (!token) { setStudentsLoading(false); setStudentsError('Not authenticated'); return }
-      const res = await fetch('http://127.0.0.1:8000/api/students', {
+      const res = await fetch(`${getApiBase()}/api/students`, {
         headers: { 'Accept':'application/json', 'Authorization': `Bearer ${token}` }
       })
       if (!res.ok) {
@@ -141,7 +144,7 @@ export default function TeacherForms({ onLogout = () => {} }) {
     try {
       const token = localStorage.getItem('authToken')
       if (!token) { alert('Not authenticated'); return }
-      const res = await fetch(`http://127.0.0.1:8000/api/students/${studentId}`, {
+      const res = await fetch(`${getApiBase()}/api/students/${studentId}`, {
         method: 'DELETE',
         headers: { 'Accept':'application/json', 'Authorization': `Bearer ${token}` }
       })
@@ -623,6 +626,269 @@ export default function TeacherForms({ onLogout = () => {} }) {
   // Profile edit mode
   const [editingProfile, setEditingProfile] = useState(false)
   const profileImageRef = useRef(null)
+
+  // Fetch user profile from API
+  const fetchProfile = async () => {
+    try {
+      setProfileLoading(true)
+      setProfileError('')
+      const token = localStorage.getItem('authToken') || localStorage.getItem('token')
+      if (!token) {
+        setProfileError('Not authenticated')
+        return
+      }
+      const base = getApiBase()
+      const res = await fetch(`${base}/api/auth/me`, {
+        headers: { Accept: 'application/json', Authorization: `Bearer ${token}` }
+      })
+      if (!res.ok) throw new Error('Failed to load profile')
+      const userData = await res.json()
+      
+      const profileData = {
+        first_name: userData.first_name || '',
+        middle_name: userData.middle_name || '',
+        last_name: userData.last_name || '',
+        email: userData.email || '',
+        contact_number: userData.contact_number || '',
+        address: userData.address || '',
+        img: userData.profile_photo ? `${base}/storage/${userData.profile_photo}` : ''
+      }
+      
+      setProfile(profileData)
+      localStorage.setItem('teacher_profile', JSON.stringify(profileData))
+    } catch (e) {
+      setProfileError(e.message || 'Error loading profile')
+    } finally {
+      setProfileLoading(false)
+    }
+  }
+
+  // Save profile updates
+  const saveProfile = async () => {
+    try {
+      setProfileLoading(true)
+      setProfileError('')
+      setProfileSuccess('')
+      
+      const token = localStorage.getItem('authToken') || localStorage.getItem('token')
+      if (!token) {
+        setProfileError('Not authenticated')
+        return
+      }
+      
+      if (!profile.email) {
+        setProfileError('Email is required')
+        return
+      }
+      
+      const base = getApiBase()
+      const res = await fetch(`${base}/api/auth/profile`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          first_name: profile.first_name,
+          middle_name: profile.middle_name,
+          last_name: profile.last_name,
+          email: profile.email,
+          contact_number: profile.contact_number,
+          address: profile.address
+        })
+      })
+      
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}))
+        throw new Error(errorData.message || 'Failed to update profile')
+      }
+      
+      const data = await res.json()
+      setProfileSuccess('Profile updated successfully')
+      
+      // Update local storage
+      const updatedProfile = {
+        ...profile,
+        first_name: data.user?.first_name || profile.first_name,
+        middle_name: data.user?.middle_name || profile.middle_name,
+        last_name: data.user?.last_name || profile.last_name,
+        email: data.user?.email || profile.email,
+        contact_number: data.user?.contact_number || profile.contact_number,
+        address: data.user?.address || profile.address
+      }
+      setProfile(updatedProfile)
+      localStorage.setItem('teacher_profile', JSON.stringify(updatedProfile))
+      
+      setTimeout(() => {
+        setEditingProfile(false)
+        setProfileSuccess('')
+      }, 1500)
+    } catch (e) {
+      setProfileError(e.message || 'Error updating profile')
+    } finally {
+      setProfileLoading(false)
+    }
+  }
+
+  // Change password
+  const changePassword = async () => {
+    try {
+      setProfileLoading(true)
+      setProfileError('')
+      setProfileSuccess('')
+      
+      const token = localStorage.getItem('authToken') || localStorage.getItem('token')
+      if (!token) {
+        setProfileError('Not authenticated')
+        return
+      }
+      
+      if (!passwords.current || !passwords.new || !passwords.confirm) {
+        setProfileError('All password fields are required')
+        return
+      }
+      
+      if (passwords.new !== passwords.confirm) {
+        setProfileError('New passwords do not match')
+        return
+      }
+      
+      if (passwords.new.length < 6) {
+        setProfileError('New password must be at least 6 characters')
+        return
+      }
+      
+      const base = getApiBase()
+      const res = await fetch(`${base}/api/auth/password`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          current_password: passwords.current,
+          new_password: passwords.new,
+          new_password_confirmation: passwords.confirm
+        })
+      })
+      
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}))
+        throw new Error(errorData.message || 'Failed to change password')
+      }
+      
+      setProfileSuccess('Password changed successfully')
+      setPasswords({ current: '', new: '', confirm: '' })
+      
+      setTimeout(() => {
+        setProfileSuccess('')
+      }, 3000)
+    } catch (e) {
+      setProfileError(e.message || 'Error changing password')
+    } finally {
+      setProfileLoading(false)
+    }
+  }
+
+  // Fetch profile when settings view is opened
+  useEffect(() => {
+    if (view === 'settings') {
+      fetchProfile()
+    }
+  }, [view])
+
+  // Upload profile photo
+  const uploadProfilePhoto = async (file) => {
+    try {
+      setProfileLoading(true)
+      setProfileError('')
+      setProfileSuccess('')
+      
+      const token = localStorage.getItem('authToken') || localStorage.getItem('token')
+      if (!token) {
+        setProfileError('Not authenticated')
+        return
+      }
+      
+      const formData = new FormData()
+      formData.append('photo', file)
+      
+      const base = getApiBase()
+      const res = await fetch(`${base}/api/auth/profile/photo`, {
+        method: 'POST',
+        headers: {
+          Accept: 'application/json',
+          Authorization: `Bearer ${token}`
+        },
+        body: formData
+      })
+      
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}))
+        throw new Error(errorData.message || 'Failed to upload photo')
+      }
+      
+      const data = await res.json()
+      setProfileSuccess('Profile photo uploaded successfully')
+      
+      // Update profile with new photo URL
+      setProfile(p => ({ ...p, img: data.photo_url }))
+      
+      // Also refresh the full profile
+      setTimeout(() => {
+        fetchProfile()
+        setProfileSuccess('')
+      }, 1500)
+    } catch (e) {
+      setProfileError(e.message || 'Error uploading photo')
+    } finally {
+      setProfileLoading(false)
+    }
+  }
+
+  // Delete profile photo
+  const deleteProfilePhoto = async () => {
+    if (!confirm('Are you sure you want to delete your profile photo?')) return
+    
+    try {
+      setProfileLoading(true)
+      setProfileError('')
+      setProfileSuccess('')
+      
+      const token = localStorage.getItem('authToken') || localStorage.getItem('token')
+      if (!token) {
+        setProfileError('Not authenticated')
+        return
+      }
+      
+      const base = getApiBase()
+      const res = await fetch(`${base}/api/auth/profile/photo`, {
+        method: 'DELETE',
+        headers: {
+          Accept: 'application/json',
+          Authorization: `Bearer ${token}`
+        }
+      })
+      
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}))
+        throw new Error(errorData.message || 'Failed to delete photo')
+      }
+      
+      setProfileSuccess('Profile photo deleted successfully')
+      setProfile(p => ({ ...p, img: '' }))
+      
+      setTimeout(() => {
+        setProfileSuccess('')
+      }, 1500)
+    } catch (e) {
+      setProfileError(e.message || 'Error deleting photo')
+    } finally {
+      setProfileLoading(false)
+    }
+  }
 
   // close menu when view changes or on resize (prevents it from sticking)
   useEffect(() => {
@@ -1375,7 +1641,7 @@ export default function TeacherForms({ onLogout = () => {} }) {
                         if (password !== confirm) { setStudentStatus('Passwords do not match'); return }
                         const token = localStorage.getItem('authToken')
                         if (!token) { setStudentStatus('Not authenticated'); return }
-                        const res = await fetch('http://127.0.0.1:8000/api/students', {
+                        const res = await fetch(`${getApiBase()}/api/students`, {
                           method: 'POST',
                           headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'Authorization': `Bearer ${token}` },
                           body: JSON.stringify({ first_name, middle_name, last_name, email, password, age: age? Number(age): undefined, birthday, contact_number, address })
@@ -1446,7 +1712,7 @@ export default function TeacherForms({ onLogout = () => {} }) {
                         const token = localStorage.getItem('authToken');
                         if (!token) { alert('Not authenticated'); return }
                         const payload = { ...editStudent, age: editStudent.age? Number(editStudent.age): undefined }
-                        const res = await fetch(`http://127.0.0.1:8000/api/students/${editStudent.id}`, {
+                        const res = await fetch(`${getApiBase()}/api/students/${editStudent.id}`, {
                           method: 'PUT',
                           headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'Authorization': `Bearer ${token}` },
                           body: JSON.stringify(payload)
@@ -1472,33 +1738,46 @@ export default function TeacherForms({ onLogout = () => {} }) {
               <div>
                 <h3>Settings</h3>
 
+                {profileError && <div className="error-message" style={{marginBottom: '1rem', padding: '0.75rem', backgroundColor: '#fee', color: '#c33', borderRadius: '4px'}}>{profileError}</div>}
+                {profileSuccess && <div className="success-message" style={{marginBottom: '1rem', padding: '0.75rem', backgroundColor: '#efe', color: '#373', borderRadius: '4px'}}>{profileSuccess}</div>}
+
                 {/* Profile View Card */}
                 {!editingProfile ? (
                   <div className="card profile-card">
-                    <div className="profile-view">
-                      <div className="profile-pic-section">
-                        {profile.img ? (
-                          <img src={profile.img} alt="profile" className="profile-picture" />
-                        ) : (
-                          <div className="profile-picture-placeholder">No Photo</div>
-                        )}
-                      </div>
-                      <div className="profile-info">
-                        <div className="profile-field">
-                          <label>Name</label>
-                          <p>{profile.name || 'Not set'}</p>
+                    {profileLoading ? (
+                      <p>Loading profile...</p>
+                    ) : (
+                      <>
+                        <div className="profile-view">
+                          <div className="profile-pic-section">
+                            {profile.img ? (
+                              <img src={profile.img} alt="profile" className="profile-picture" />
+                            ) : (
+                              <div className="profile-picture-placeholder">No Photo</div>
+                            )}
+                          </div>
+                          <div className="profile-info">
+                            <div className="profile-field">
+                              <label>NAME</label>
+                              <p>{`${profile.first_name || ''} ${profile.middle_name || ''} ${profile.last_name || ''}`.trim() || 'Not set'}</p>
+                            </div>
+                            <div className="profile-field">
+                              <label>EMAIL</label>
+                              <p>{profile.email || 'Not set'}</p>
+                            </div>
+                            <div className="profile-field">
+                              <label>CONTACT NUMBER</label>
+                              <p>{profile.contact_number || 'Not set'}</p>
+                            </div>
+                            <div className="profile-field">
+                              <label>ADDRESS</label>
+                              <p>{profile.address || 'Not set'}</p>
+                            </div>
+                          </div>
                         </div>
-                        <div className="profile-field">
-                          <label>Email</label>
-                          <p>{profile.email || 'Not set'}</p>
-                        </div>
-                        <div className="profile-field">
-                          <label>Teacher ID</label>
-                          <p>{profile.teacherId || 'Not set'}</p>
-                        </div>
-                      </div>
-                    </div>
-                    <button className="btn-primary" onClick={() => setEditingProfile(true)}>Edit Profile</button>
+                        <button className="btn-primary" onClick={() => setEditingProfile(true)}>Edit Profile</button>
+                      </>
+                    )}
                   </div>
                 ) : (
                   <div className="card">
@@ -1513,41 +1792,85 @@ export default function TeacherForms({ onLogout = () => {} }) {
                           onChange={(e) => {
                             const file = e.target.files?.[0]
                             if (file) {
-                              const reader = new FileReader()
-                              reader.onload = (event) => {
-                                setProfile(p => ({ ...p, img: event.target?.result || '' }))
+                              // Validate file size (max 2MB)
+                              if (file.size > 2 * 1024 * 1024) {
+                                setProfileError('Image size must be less than 2MB')
+                                return
                               }
-                              reader.readAsDataURL(file)
+                              // Upload to server
+                              uploadProfilePhoto(file)
                             }
                           }}
                         />
-                        <div className="image-upload-area" onClick={() => profileImageRef.current?.click()}>
+                        <div className="image-upload-area" onClick={() => profileImageRef.current?.click()} style={{position: 'relative'}}>
                           {profile.img ? (
-                            <img src={profile.img} alt="profile preview" className="image-preview" />
+                            <>
+                              <img src={profile.img} alt="profile preview" className="image-preview" />
+                              <button 
+                                className="btn-ghost" 
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  deleteProfilePhoto()
+                                }}
+                                style={{
+                                  position: 'absolute',
+                                  top: '8px',
+                                  right: '8px',
+                                  padding: '4px 8px',
+                                  fontSize: '12px',
+                                  backgroundColor: 'rgba(255,255,255,0.9)'
+                                }}
+                              >
+                                Remove
+                              </button>
+                            </>
                           ) : (
-                            <div className="upload-placeholder">Click to upload photo</div>
+                            <div className="upload-placeholder">Click to upload photo (max 2MB)</div>
                           )}
                         </div>
                       </div>
 
-                      <label>Name</label>
-                      <input value={profile.name} onChange={e=>setProfile(p=>({...p, name: e.target.value}))} />
+                      <label>First Name</label>
+                      <input value={profile.first_name} onChange={e=>setProfile(p=>({...p, first_name: e.target.value}))} />
+                      
+                      <label>Middle Name</label>
+                      <input value={profile.middle_name} onChange={e=>setProfile(p=>({...p, middle_name: e.target.value}))} />
+                      
+                      <label>Last Name</label>
+                      <input value={profile.last_name} onChange={e=>setProfile(p=>({...p, last_name: e.target.value}))} />
+                      
                       <label>Email</label>
-                      <input value={profile.email} onChange={e=>setProfile(p=>({...p, email: e.target.value}))} />
-                      <label>Teacher ID</label>
-                      <input value={profile.teacherId} onChange={e=>setProfile(p=>({...p, teacherId: e.target.value}))} />
+                      <input type="email" value={profile.email} onChange={e=>setProfile(p=>({...p, email: e.target.value}))} required />
+                      
+                      <label>Contact Number</label>
+                      <input value={profile.contact_number} onChange={e=>setProfile(p=>({...p, contact_number: e.target.value}))} />
+                      
+                      <label>Address</label>
+                      <textarea value={profile.address} onChange={e=>setProfile(p=>({...p, address: e.target.value}))} rows="3" style={{resize: 'vertical'}} />
 
                       <h4 style={{marginTop: '1.5rem'}}>Change Password</h4>
                       <label>Current password</label>
                       <input type="password" value={passwords.current} onChange={e=>setPasswords(s=>({...s, current: e.target.value}))} />
-                      <label>New password</label>
+                      <label>New password (min 6 characters)</label>
                       <input type="password" value={passwords.new} onChange={e=>setPasswords(s=>({...s, new: e.target.value}))} />
-                      <label>Confirm new</label>
+                      <label>Confirm new password</label>
                       <input type="password" value={passwords.confirm} onChange={e=>setPasswords(s=>({...s, confirm: e.target.value}))} />
 
-                      <div className="profile-actions">
-                        <button className="btn-primary" onClick={()=>{ setEditingProfile(false); alert('Profile saved (mock)') }}>Save</button>
-                        <button className="btn-ghost" onClick={() => setEditingProfile(false)}>Cancel</button>
+                      <div className="profile-actions" style={{marginTop: '1rem'}}>
+                        <button className="btn-primary" onClick={saveProfile} disabled={profileLoading}>
+                          {profileLoading ? 'Saving...' : 'Save Profile'}
+                        </button>
+                        {(passwords.current || passwords.new || passwords.confirm) && (
+                          <button className="btn-secondary" onClick={changePassword} disabled={profileLoading}>
+                            {profileLoading ? 'Changing...' : 'Change Password'}
+                          </button>
+                        )}
+                        <button className="btn-ghost" onClick={() => {
+                          setEditingProfile(false)
+                          setProfileError('')
+                          setProfileSuccess('')
+                          setPasswords({ current: '', new: '', confirm: '' })
+                        }}>Cancel</button>
                       </div>
                     </div>
                   </div>

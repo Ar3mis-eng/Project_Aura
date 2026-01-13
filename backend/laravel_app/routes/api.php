@@ -15,6 +15,10 @@ Route::prefix('auth')->group(function () {
     Route::middleware('auth:sanctum')->group(function () {
         Route::post('/logout', [AuthController::class, 'logout']);
         Route::get('/me', [AuthController::class, 'me']);
+        Route::put('/profile', [AuthController::class, 'updateProfile']);
+        Route::put('/password', [AuthController::class, 'changePassword']);
+        Route::post('/profile/photo', [AuthController::class, 'uploadProfilePhoto']);
+        Route::delete('/profile/photo', [AuthController::class, 'deleteProfilePhoto']);
     });
 });
 

@@ -8,7 +8,7 @@ import './MainForm.css'
 export default function Messages({ onClose = () => {} }) {
   const getApiBase = () => {
     const stored = localStorage.getItem('apiBase')
-    return stored && stored.trim() ? stored.trim() : 'http://127.0.0.1:8000'
+    return stored && stored.trim() ? stored.trim() : (import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000')
   }
 
   const [threads, setThreads] = useState([])

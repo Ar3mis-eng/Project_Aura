@@ -1,0 +1,81 @@
+services:
+  # Laravel Backend
+  - type: web
+    name: project-aura-backend
+    runtime: docker
+    plan: free
+    branch: main
+    rootDir: backend/laravel_app
+    dockerfilePath: backend/laravel_app/Dockerfile
+    envVars:
+      - key: APP_NAME
+        value: Project_Aura
+      - key: APP_ENV
+        value: production
+      - key: APP_DEBUG
+        value: false
+      - key: APP_URL
+        sync: false
+      - key: APP_KEY
+        generateValue: true
+      - key: LOG_CHANNEL
+        value: stack
+      - key: LOG_LEVEL
+        value: error
+      - key: DB_CONNECTION
+        value: mysql
+      - key: DB_HOST
+        fromDatabase:
+          name: project-aura-db
+          property: host
+      - key: DB_PORT
+        fromDatabase:
+          name: project-aura-db
+          property: port
+      - key: DB_DATABASE
+        fromDatabase:
+          name: project-aura-db
+          property: database
+      - key: DB_USERNAME
+        fromDatabase:
+          name: project-aura-db
+          property: user
+      - key: DB_PASSWORD
+        fromDatabase:
+          name: project-aura-db
+          property: password
+      - key: CACHE_DRIVER
+        value: file
+      - key: SESSION_DRIVER
+        value: cookie
+      - key: QUEUE_CONNECTION
+        value: sync
+      - key: FRONTEND_URL
+        sync: false
+      - key: CORS_ALLOWED_ORIGINS
+        sync: false
+      - key: SESSION_LIFETIME
+        value: 120
+    buildCommand: chmod +x ./build.sh && ./build.sh
+    startCommand: php artisan serve --host=0.0.0.0 --port=$PORT
+
+  # MySQL Database
+  - type: pserv
+    name: project-aura-db
+    runtime: docker
+    plan: free
+    dockerfilePath: backend/laravel_app/Dockerfile.mysql
+    envVars:
+      - key: MYSQL_ROOT_PASSWORD
+        generateValue: true
+      - key: MYSQL_DATABASE
+        value: aura
+      - key: MYSQL_USER
+        value: aura_user
+      - key: MYSQL_PASSWORD
+        generateValue: true
+
+databases:
+  - name: project-aura-db
+    databaseName: aura
+    plan: free

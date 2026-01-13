@@ -5,7 +5,7 @@ import './MainForm.css'
 
 const getApiBase = () => {
   const stored = localStorage.getItem('apiBase')
-  return stored && stored.trim() ? stored.trim() : 'http://127.0.0.1:8000'
+  return stored && stored.trim() ? stored.trim() : (import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000')
 }
 
 export default function AbuseReport({ onFinish = () => {}, onCancel = () => {}, showIntro: showIntroProp = true }) {

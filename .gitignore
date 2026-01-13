@@ -1,0 +1,45 @@
+# Environment files (keep .env.development and .env.production, but ignore .env)
+client/.env
+backend/laravel_app/.env
+
+# Dependencies
+node_modules/
+vendor/
+
+# Build outputs
+dist/
+build/
+client/dist/
+client/build/
+
+# Logs
+*.log
+logs/
+backend/laravel_app/storage/logs/*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# IDE
+.vscode/
+.idea/
+*.sublime-*
+
+# Laravel specific
+backend/laravel_app/storage/*.key
+backend/laravel_app/storage/framework/cache/*
+backend/laravel_app/storage/framework/sessions/*
+backend/laravel_app/storage/framework/views/*
+backend/laravel_app/bootstrap/cache/*
+
+# Test coverage
+coverage/
+.nyc_output/
+
+# Temporary files
+*.tmp
+*.temp
