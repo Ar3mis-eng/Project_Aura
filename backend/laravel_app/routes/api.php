@@ -44,6 +44,29 @@ Route::get('/setup', function () {
     }
 });
 
+// Create test user - run this once to seed demo data
+Route::get('/seed', function () {
+    try {
+        Artisan::call('db:seed', ['--class' => 'Database\\Seeders\\DemoSeeder', '--force' => true]);
+        $output = Artisan::output();
+
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Demo data seeded successfully',
+            'output' => $output,
+            'credentials' => [
+                ['email' => 'johnronan@teacher.com', 'password' => 'password', 'role' => 'teacher'],
+                ['email' => 'marytaylor@teacher.com', 'password' => 'password', 'role' => 'teacher']
+            ]
+        ]);
+    } catch (\Exception $e) {
+        return response()->json([
+            'status' => 'error',
+            'message' => 'Seeding failed: ' . $e->getMessage()
+        ], 500);
+    }
+});
+
 Route::prefix('auth')->group(function () {
     Route::post('/login', [AuthController::class, 'login']);
     Route::middleware('auth:sanctum')->group(function () {
