@@ -56,7 +56,7 @@ Route::get('/seed', function () {
             'output' => $output,
             'credentials' => [
                 ['email' => 'johnronan@teacher.com', 'password' => 'password', 'role' => 'teacher'],
-                ['email' => 'marytaylor@teacher.com', 'password' => 'password', 'role' => 'teacher']
+                ['email' => 'chin.balahim@deped.gov.ph', 'password' => 'password123', 'role' => 'teacher']
             ]
         ]);
     } catch (\Exception $e) {

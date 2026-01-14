@@ -23,17 +23,6 @@ class DemoSeeder extends Seeder
         );
 
         $teacher2 = User::firstOrCreate(
-            ['email' => 'marytaylor@teacher.com'],
-            [
-                'name' => 'Mary Taylor',
-                'first_name' => 'Mary',
-                'last_name' => 'Taylor',
-                'role' => 'teacher',
-                'password' => Hash::make('password'),
-            ]
-        );
-
-        $teacher3 = User::firstOrCreate(
             ['email' => 'chin.balahim@deped.gov.ph'],
             [
                 'name' => 'Chin J. Balahim',
