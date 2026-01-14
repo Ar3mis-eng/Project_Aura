@@ -33,6 +33,21 @@ class DemoSeeder extends Seeder
             ]
         );
 
+        $teacher3 = User::firstOrCreate(
+            ['email' => 'chin.balahim@deped.gov.ph'],
+            [
+                'name' => 'Chin J. Balahim',
+                'first_name' => 'Chin',
+                'middle_name' => 'J.',
+                'last_name' => 'Balahim',
+                'role' => 'teacher',
+                'password' => Hash::make('password123'),
+                'address' => 'BLOCK 8 LOT 4 MALAGAMOT PANACAN DC',
+                'contact_number' => '09171076192',
+                'birthday' => '1977-06-25',
+            ]
+        );
+
         // Populate question sets from client AbuseReport.jsx
         $questionSets = [
             'Physical' => [
