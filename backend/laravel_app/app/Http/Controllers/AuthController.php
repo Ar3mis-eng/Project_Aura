@@ -96,25 +96,38 @@ class AuthController extends Controller
             'photo' => 'required|image|mimes:jpeg,png,jpg,gif|max:2048', // Max 2MB
         ]);
 
-        // Delete old photo if exists
+        // Delete old photo if exists (from both storage and public)
         if ($user->profile_photo) {
-            $oldPhotoPath = public_path('storage/' . $user->profile_photo);
-            if (file_exists($oldPhotoPath)) {
-                unlink($oldPhotoPath);
+            $oldStoragePath = public_path('storage/' . $user->profile_photo);
+            if (file_exists($oldStoragePath)) {
+                unlink($oldStoragePath);
+            }
+            $oldPublicPath = public_path($user->profile_photo);
+            if (file_exists($oldPublicPath)) {
+                unlink($oldPublicPath);
             }
         }
 
-        // Store new photo
+        // Store new photo in storage/app/public/profile_photos
         $path = $request->file('photo')->store('profile_photos', 'public');
-        
+
+        // Also copy to public/profile_photos for direct access (Render free tier workaround)
+        $storagePath = storage_path('app/public/' . $path);
+        $publicDir = public_path('profile_photos');
+        if (!file_exists($publicDir)) {
+            mkdir($publicDir, 0777, true);
+        }
+        $publicPath = $publicDir . '/' . basename($path);
+        copy($storagePath, $publicPath);
+
         $user->update([
-            'profile_photo' => $path
+            'profile_photo' => 'profile_photos/' . basename($path)
         ]);
 
         return response()->json([
             'message' => 'Profile photo uploaded successfully',
-            'photo_url' => url('storage/' . $path),
-            'photo_path' => $path
+            'photo_url' => url('profile_photos/' . basename($path)),
+            'photo_path' => 'profile_photos/' . basename($path)
         ]);
     }
 
