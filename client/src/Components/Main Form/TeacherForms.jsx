@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import './TeacherForms.css'
 import { IoMdMenu } from 'react-icons/io'
+import { FaEye, FaEyeSlash } from 'react-icons/fa'
 import logo from '../Login/media/logo.png'
 
 export default function TeacherForms({ onLogout = () => {} }) {
@@ -105,6 +106,8 @@ export default function TeacherForms({ onLogout = () => {} }) {
   // Student Management
   const [studentForm, setStudentForm] = useState({ first_name:'', middle_name:'', last_name:'', age:'', birthday:'', contact_number:'', address:'', email:'', password:'', confirm:'' })
   const [studentStatus, setStudentStatus] = useState('')
+  const [showStudentPassword, setShowStudentPassword] = useState(false)
+  const [showStudentConfirm, setShowStudentConfirm] = useState(false)
   const [students, setStudents] = useState([])
   const [studentsLoading, setStudentsLoading] = useState(false)
   const [studentsError, setStudentsError] = useState('')
@@ -833,8 +836,10 @@ export default function TeacherForms({ onLogout = () => {} }) {
       const data = await res.json()
       setProfileSuccess('Profile photo uploaded successfully')
       
-      // Update profile with new photo URL
-      setProfile(p => ({ ...p, img: data.photo_url }))
+      // Update profile with new photo URL - use photo_path with base URL for consistency
+      const base = getApiBase()
+      const photoUrl = data.photo_path ? `${base}/storage/${data.photo_path}` : ''
+      setProfile(p => ({ ...p, img: photoUrl }))
       
       // Also refresh the full profile
       setTimeout(() => {
@@ -1624,11 +1629,55 @@ export default function TeacherForms({ onLogout = () => {} }) {
                     </div>
                     <div>
                       <label>Password</label>
-                      <input type="password" value={studentForm.password} onChange={e=>setStudentForm(f=>({...f, password:e.target.value}))} />
+                      <div style={{ position: 'relative' }}>
+                        <input type={showStudentPassword ? "text" : "password"} value={studentForm.password} onChange={e=>setStudentForm(f=>({...f, password:e.target.value}))} />
+                        <button
+                          type="button"
+                          onClick={() => setShowStudentPassword(!showStudentPassword)}
+                          style={{
+                            position: 'absolute',
+                            right: '10px',
+                            top: '50%',
+                            transform: 'translateY(-50%)',
+                            background: 'none',
+                            border: 'none',
+                            cursor: 'pointer',
+                            padding: '5px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            color: '#666'
+                          }}
+                          aria-label={showStudentPassword ? "Hide password" : "Show password"}
+                        >
+                          {showStudentPassword ? <FaEyeSlash size={18} /> : <FaEye size={18} />}
+                        </button>
+                      </div>
                     </div>
                     <div>
                       <label>Confirm Password</label>
-                      <input type="password" value={studentForm.confirm} onChange={e=>setStudentForm(f=>({...f, confirm:e.target.value}))} />
+                      <div style={{ position: 'relative' }}>
+                        <input type={showStudentConfirm ? "text" : "password"} value={studentForm.confirm} onChange={e=>setStudentForm(f=>({...f, confirm:e.target.value}))} />
+                        <button
+                          type="button"
+                          onClick={() => setShowStudentConfirm(!showStudentConfirm)}
+                          style={{
+                            position: 'absolute',
+                            right: '10px',
+                            top: '50%',
+                            transform: 'translateY(-50%)',
+                            background: 'none',
+                            border: 'none',
+                            cursor: 'pointer',
+                            padding: '5px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            color: '#666'
+                          }}
+                          aria-label={showStudentConfirm ? "Hide password" : "Show password"}
+                        >
+                          {showStudentConfirm ? <FaEyeSlash size={18} /> : <FaEye size={18} />}
+                        </button>
+                      </div>
                     </div>
                   </div>
                   {studentStatus && <div className="status-line">{studentStatus}</div>}

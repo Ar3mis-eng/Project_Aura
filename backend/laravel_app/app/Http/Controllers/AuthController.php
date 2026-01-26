@@ -113,7 +113,7 @@ class AuthController extends Controller
 
         return response()->json([
             'message' => 'Profile photo uploaded successfully',
-            'photo_url' => asset('storage/' . $path),
+            'photo_url' => url('storage/' . $path),
             'photo_path' => $path
         ]);
     }

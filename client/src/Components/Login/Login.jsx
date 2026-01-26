@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { MdOutlineLogin } from "react-icons/md";
+import { FaEye, FaEyeSlash } from "react-icons/fa";
 import logo from "./media/logo.png";
 import MainForm from "../Main Form/MainForm";
 import "./Login.css";
@@ -10,6 +11,7 @@ const Login = () => {
   const [error, setError] = useState("");
   const [showMain, setShowMain] = useState(false);
   const [role, setRole] = useState(null);
+  const [showPassword, setShowPassword] = useState(false);
 
   // Restore session on refresh if tokens exist
   useEffect(() => {
@@ -80,14 +82,36 @@ const Login = () => {
               </div>
               <div className="form-group">
                 <label htmlFor="password">Password:</label>
-                <input
-                  type="password"
-                  id="password"
-                  name="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                />
+                <div style={{ position: 'relative' }}>
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    id="password"
+                    name="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    style={{
+                      position: 'absolute',
+                      right: '10px',
+                      top: '50%',
+                      transform: 'translateY(-50%)',
+                      background: 'none',
+                      border: 'none',
+                      cursor: 'pointer',
+                      padding: '5px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      color: '#666'
+                    }}
+                    aria-label={showPassword ? "Hide password" : "Show password"}
+                  >
+                    {showPassword ? <FaEyeSlash size={18} /> : <FaEye size={18} />}
+                  </button>
+                </div>
               </div>
               <button id="login-submit" type="button" className="login-btn" onClick={handleShowMain}>
                 <span className="login-label">Login</span>
