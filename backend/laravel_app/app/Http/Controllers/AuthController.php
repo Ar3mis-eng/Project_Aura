@@ -115,10 +115,15 @@ class AuthController extends Controller
         $storagePath = storage_path('app/public/' . $path);
         $publicDir = public_path('profile_photos');
         if (!file_exists($publicDir)) {
-            mkdir($publicDir, 0777, true);
+            if (!mkdir($publicDir, 0777, true)) {
+                
+                error_log('Failed to create public/profile_photos directory');
+            }
         }
         $publicPath = $publicDir . '/' . basename($path);
-        copy($storagePath, $publicPath);
+        if (!copy($storagePath, $publicPath)) {
+            error_log('Failed to copy profile photo from ' . $storagePath . ' to ' . $publicPath);
+        }
 
         $user->update([
             'profile_photo' => 'profile_photos/' . basename($path)
