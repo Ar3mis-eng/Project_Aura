@@ -3,6 +3,7 @@ import './TeacherForms.css'
 import { IoMdMenu } from 'react-icons/io'
 import { FaEye, FaEyeSlash } from 'react-icons/fa'
 import logo from '../Login/media/logo.png'
+import * as XLSX from 'xlsx'
 
 export default function TeacherForms({ onLogout = () => {} }) {
   const getApiBase = () => {
@@ -52,6 +53,7 @@ export default function TeacherForms({ onLogout = () => {} }) {
   const [analytics, setAnalytics] = useState({ total_students: 0, total_teachers: 0, total_reports: 0, total_logins: 0 })
   const [analyticsLoading, setAnalyticsLoading] = useState(false)
   const [analyticsError, setAnalyticsError] = useState('')
+  const [abuseTypeCounts, setAbuseTypeCounts] = useState([])
 
   // Add questionnaire
   const [newType, setNewType] = useState('')
@@ -466,6 +468,44 @@ export default function TeacherForms({ onLogout = () => {} }) {
       if (!res.ok) throw new Error('Failed to load analytics')
       const data = await res.json()
       setAnalytics(data.data || { total_students: 0, total_teachers: 0, total_reports: 0, total_logins: 0 })
+      
+      // Fetch question sets to get all abuse types
+      const qsRes = await fetch(`${base}/api/question-sets`, {
+        headers: { Accept: 'application/json', Authorization: `Bearer ${token}` }
+      })
+      const questionSets = qsRes.ok ? await qsRes.json() : []
+      const allTypes = Array.isArray(questionSets) ? questionSets.map(qs => qs.key).filter(Boolean) : []
+      
+      // Count reports by type (already filtered to teacher's students by backend)
+      const typeCounts = {}
+      allTypes.forEach(type => {
+        typeCounts[type] = 0
+      })
+      
+      reports.forEach(report => {
+        const type = report.type || 'Unspecified'
+        if (type in typeCounts) {
+          typeCounts[type]++
+        } else {
+          typeCounts[type] = 1
+        }
+      })
+      
+      // Convert to array and sort (move "Other" to the end)
+      const countsArray = Object.entries(typeCounts).map(([type, count]) => ({
+        type,
+        count
+      })).sort((a, b) => {
+        // Move "Other" or "Others" to the end
+        const aIsOther = a.type.toLowerCase() === 'other' || a.type.toLowerCase() === 'others'
+        const bIsOther = b.type.toLowerCase() === 'other' || b.type.toLowerCase() === 'others'
+        if (aIsOther && !bIsOther) return 1
+        if (!aIsOther && bIsOther) return -1
+        // Otherwise sort by count (highest first)
+        return b.count - a.count
+      })
+      
+      setAbuseTypeCounts(countsArray)
     } catch (e) {
       setAnalyticsError(e.message || 'Error loading analytics')
     } finally {
@@ -552,6 +592,96 @@ export default function TeacherForms({ onLogout = () => {} }) {
     }, 15000) // Every 15 seconds
     return () => clearInterval(interval)
   }, [])
+
+  // Export to Excel function
+  const exportToExcel = async () => {
+    try {
+      if (reports.length === 0) {
+        alert('No reports to export')
+        return
+      }
+      
+      // Get teacher's full name
+      const teacherName = `${profile.first_name || ''} ${profile.middle_name || ''} ${profile.last_name || ''}`.trim() || 'Teacher'
+      
+      // Get current date
+      const currentDate = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
+      
+      // Fetch question sets from backend
+      const token = localStorage.getItem('authToken') || localStorage.getItem('token')
+      const base = getApiBase()
+      const res = await fetch(`${base}/api/question-sets`, {
+        headers: { Accept: 'application/json', Authorization: token ? `Bearer ${token}` : undefined }
+      })
+      if (!res.ok) throw new Error('Failed to load question sets')
+      const questionSets = await res.json()
+      
+      // Group reports by abuse type
+      const reportsByType = {}
+      reports.forEach(report => {
+        const type = report.type || 'Unspecified'
+        if (!reportsByType[type]) {
+          reportsByType[type] = []
+        }
+        reportsByType[type].push(report)
+      })
+      
+      // Create workbook
+      const workbook = XLSX.utils.book_new()
+      
+      // Create a sheet for each abuse type
+      Object.keys(reportsByType).forEach(abuseType => {
+        const typeReports = reportsByType[abuseType]
+        
+        // Find the question set for this abuse type
+        const questionSet = Array.isArray(questionSets) ? questionSets.find(s => s && s.key === abuseType) : null
+        const questions = Array.isArray(questionSet?.schema) ? questionSet.schema : []
+        
+        // Build header row: Student Name + Question columns
+        const headers = ['Student Name']
+        questions.forEach(q => {
+          headers.push(q.q || 'Question')
+        })
+        
+        // Build data rows
+        const data = [headers]
+        typeReports.forEach(report => {
+          const studentName = report.student ? `${report.student.first_name || ''} ${report.student.last_name || ''}`.trim() : 'Unknown'
+          const row = [studentName]
+          
+          // Add answers for each question
+          questions.forEach(q => {
+            const answer = report.answers && (q.id in report.answers) ? String(report.answers[q.id]) : '—'
+            row.push(answer)
+          })
+          
+          data.push(row)
+        })
+        
+        // Create worksheet from data
+        const worksheet = XLSX.utils.aoa_to_sheet(data)
+        
+        // Set column widths
+        const colWidths = [{ wch: 20 }] // Student Name column
+        questions.forEach(() => {
+          colWidths.push({ wch: 30 }) // Question columns
+        })
+        worksheet['!cols'] = colWidths
+        
+        // Add sheet to workbook (sanitize sheet name - Excel has 31 char limit and doesn't allow certain chars)
+        let sheetName = abuseType.substring(0, 31).replace(/[:\\\/?\*\[\]]/g, '_')
+        XLSX.utils.book_append_sheet(workbook, worksheet, sheetName)
+      })
+      
+      // Generate filename and download
+      const filename = `Reports Submitted to Teacher ${teacherName} - ${currentDate}.xlsx`
+      XLSX.writeFile(workbook, filename)
+      
+    } catch (error) {
+      console.error('Export error:', error)
+      alert('Failed to export reports: ' + (error.message || 'Unknown error'))
+    }
+  }
 
   // Report detail view (modal)
   const [viewingReport, setViewingReport] = useState(null)
@@ -837,7 +967,6 @@ export default function TeacherForms({ onLogout = () => {} }) {
       setProfileSuccess('Profile photo uploaded successfully')
       
       // Update profile with new photo URL - use photo_path with base URL for consistency
-      const base = getApiBase()
       const photoUrl = data.photo_path ? `${base}/storage/${data.photo_path}` : ''
       setProfile(p => ({ ...p, img: photoUrl }))
       
@@ -1032,7 +1161,17 @@ export default function TeacherForms({ onLogout = () => {} }) {
             <div className="teacher-pane">
             {view === 'reports' && (
               <div>
-                <h3>Report Submitted</h3>
+                <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem'}}>
+                  <h3 style={{margin: 0}}>Report Submitted</h3>
+                  <button 
+                    className="btn-primary" 
+                    onClick={exportToExcel}
+                    disabled={reports.length === 0}
+                    style={{padding: '0.5rem 1rem', fontSize: '0.9rem'}}
+                  >
+                    Export to Excel
+                  </button>
+                </div>
                 <div className="table-wrap">
                   <table className="reports-table">
                     <thead>
@@ -1075,32 +1214,56 @@ export default function TeacherForms({ onLogout = () => {} }) {
                 ) : analyticsError ? (
                   <div className="card"><div className="empty" style={{color:'#b91c1c'}}>{analyticsError}</div></div>
                 ) : (
-                  <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(250px, 1fr))', gap:'1rem', marginTop:'1rem'}}>
-                    <div className="card" style={{textAlign:'center', padding:'1.5rem'}}>
-                      <div style={{fontSize:'2.5rem', fontWeight:'700', color:'#667eea', marginBottom:'0.5rem'}}>
-                        {analytics.total_students}
+                  <>
+                    <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(250px, 1fr))', gap:'1rem', marginTop:'1rem'}}>
+                      <div className="card" style={{textAlign:'center', padding:'1.5rem'}}>
+                        <div style={{fontSize:'2.5rem', fontWeight:'700', color:'#667eea', marginBottom:'0.5rem'}}>
+                          {analytics.total_students}
+                        </div>
+                        <div style={{fontSize:'1rem', color:'#6b7280', fontWeight:'500'}}>Total Students</div>
                       </div>
-                      <div style={{fontSize:'1rem', color:'#6b7280', fontWeight:'500'}}>Total Students</div>
-                    </div>
-                    <div className="card" style={{textAlign:'center', padding:'1.5rem'}}>
-                      <div style={{fontSize:'2.5rem', fontWeight:'700', color:'#764ba2', marginBottom:'0.5rem'}}>
-                        {analytics.total_teachers}
+                      <div className="card" style={{textAlign:'center', padding:'1.5rem'}}>
+                        <div style={{fontSize:'2.5rem', fontWeight:'700', color:'#764ba2', marginBottom:'0.5rem'}}>
+                          {analytics.total_teachers}
+                        </div>
+                        <div style={{fontSize:'1rem', color:'#6b7280', fontWeight:'500'}}>Total Teachers</div>
                       </div>
-                      <div style={{fontSize:'1rem', color:'#6b7280', fontWeight:'500'}}>Total Teachers</div>
-                    </div>
-                    <div className="card" style={{textAlign:'center', padding:'1.5rem'}}>
-                      <div style={{fontSize:'2.5rem', fontWeight:'700', color:'#059669', marginBottom:'0.5rem'}}>
-                        {analytics.total_reports}
+                      <div className="card" style={{textAlign:'center', padding:'1.5rem'}}>
+                        <div style={{fontSize:'2.5rem', fontWeight:'700', color:'#059669', marginBottom:'0.5rem'}}>
+                          {analytics.total_reports}
+                        </div>
+                        <div style={{fontSize:'1rem', color:'#6b7280', fontWeight:'500'}}>Reports Submitted</div>
                       </div>
-                      <div style={{fontSize:'1rem', color:'#6b7280', fontWeight:'500'}}>Reports Submitted</div>
-                    </div>
-                    <div className="card" style={{textAlign:'center', padding:'1.5rem'}}>
-                      <div style={{fontSize:'2.5rem', fontWeight:'700', color:'#dc2626', marginBottom:'0.5rem'}}>
-                        {analytics.total_logins}
+                      <div className="card" style={{textAlign:'center', padding:'1.5rem'}}>
+                        <div style={{fontSize:'2.5rem', fontWeight:'700', color:'#dc2626', marginBottom:'0.5rem'}}>
+                          {analytics.total_logins}
+                        </div>
+                        <div style={{fontSize:'1rem', color:'#6b7280', fontWeight:'500'}}>Total App Usage</div>
                       </div>
-                      <div style={{fontSize:'1rem', color:'#6b7280', fontWeight:'500'}}>Total App Usage</div>
                     </div>
-                  </div>
+                    
+                    <div style={{marginTop:'2rem'}}>
+                      <h4 style={{marginBottom:'1rem', fontSize:'1.25rem', fontWeight:'600'}}>Reports by Abuse Type</h4>
+                      {abuseTypeCounts.length === 0 ? (
+                        <div className="card"><div className="empty">No abuse types available</div></div>
+                      ) : (
+                        <div style={{display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(200px, 1fr))', gap:'1rem'}}>
+                          {abuseTypeCounts.map((item, idx) => {
+                            const colors = ['#667eea', '#764ba2', '#059669', '#dc2626', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4']
+                            const color = colors[idx % colors.length]
+                            return (
+                              <div key={item.type} className="card" style={{textAlign:'center', padding:'1.5rem'}}>
+                                <div style={{fontSize:'2.5rem', fontWeight:'700', color: color, marginBottom:'0.5rem'}}>
+                                  {item.count}
+                                </div>
+                                <div style={{fontSize:'1rem', color:'#6b7280', fontWeight:'500'}}>{item.type}</div>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  </>
                 )}
               </div>
             )}
