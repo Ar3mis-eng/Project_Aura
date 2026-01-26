@@ -12,6 +12,9 @@ php artisan view:clear
 echo "Running database migrations..."
 php artisan migrate --force --no-interaction
 
+echo "Creating storage symlink..."
+php artisan storage:link
+
 echo "Caching configuration..."
 php artisan config:cache
 php artisan route:cache

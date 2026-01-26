@@ -22,6 +22,7 @@ export default function MainForm({ role = null, header = null, onLogout = () => 
   const [reportsLoading, setReportsLoading] = useState(false)
   const [reportsError, setReportsError] = useState('')
   const [selectedReport, setSelectedReport] = useState(null)
+  const [questionSetsMap, setQuestionSetsMap] = useState({})
 
   // Auto-show survey (with intro slides) for students on every login
   useEffect(() => {
@@ -66,8 +67,43 @@ export default function MainForm({ role = null, header = null, onLogout = () => 
   useEffect(() => {
     if (showReports && role === 'student') {
       fetchMyReports()
+      fetchQuestionSets()
     }
   }, [showReports, role])
+
+  // Load question sets to display full questions
+  const fetchQuestionSets = async () => {
+    try {
+      const base = getApiBase()
+      const token = localStorage.getItem('authToken') || localStorage.getItem('token')
+      const res = await fetch(`${base}/api/question-sets`, {
+        method: 'GET',
+        headers: {
+          Accept: 'application/json',
+          Authorization: token ? `Bearer ${token}` : undefined,
+        },
+      })
+      if (!res.ok) return
+      const data = await res.json()
+      const map = {}
+      for (const item of data) {
+        if (item && item.key && Array.isArray(item.schema)) {
+          map[item.key] = item.schema
+        }
+      }
+      setQuestionSetsMap(map)
+    } catch (e) {
+      console.error('Error loading question sets:', e)
+    }
+  }
+
+  // Get full question text from question ID
+  const getQuestionText = (questionId, reportType) => {
+    const schema = questionSetsMap[reportType]
+    if (!schema) return questionId
+    const question = schema.find(q => q.id === questionId)
+    return question ? question.q : questionId
+  }
 
   // Fetch unread message count for students
   const fetchUnreadCount = async () => {
@@ -261,10 +297,10 @@ export default function MainForm({ role = null, header = null, onLogout = () => 
                     </div>
                     <div>
                       <div style={{ fontSize: '1rem', fontWeight: '600', color: '#1f2937', marginBottom: '12px' }}>Responses</div>
-                      {selectedReport.answers && Object.entries(selectedReport.answers).map(([question, answer], idx) => (
+                      {selectedReport.answers && Object.entries(selectedReport.answers).map(([questionId, answer], idx) => (
                         <div key={idx} style={{ marginBottom: '16px', padding: '12px', background: '#f9fafb', borderRadius: '6px' }}>
                           <div style={{ fontSize: '0.875rem', fontWeight: '500', color: '#374151', marginBottom: '6px' }}>
-                            {question}
+                            {getQuestionText(questionId, selectedReport.type)}
                           </div>
                           <div style={{ fontSize: '0.875rem', color: '#6b7280' }}>
                             {Array.isArray(answer) ? answer.join(', ') : answer}
@@ -348,7 +384,6 @@ export default function MainForm({ role = null, header = null, onLogout = () => 
           </div>
           <div className="panel-body">
             <button className="report-btn" type="button" onClick={() => setShowSurvey(true)}>Want to report abuse?</button>
-            <button className="report-btn" type="button" onClick={() => setShowReports(true)} style={{ marginTop: '10px', background: '#3b82f6' }}>View My Reports</button>
           </div>
           
         </div>
