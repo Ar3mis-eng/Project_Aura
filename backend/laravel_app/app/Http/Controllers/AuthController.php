@@ -6,6 +6,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
 use App\Models\User;
+use Cloudinary\Cloudinary;
 
 class AuthController extends Controller
 {
@@ -91,48 +92,43 @@ class AuthController extends Controller
     public function uploadProfilePhoto(Request $request)
     {
         $user = $request->user();
-        
+
         $request->validate([
             'photo' => 'required|image|mimes:jpeg,png,jpg,gif|max:2048', // Max 2MB
         ]);
 
-        // Delete old photo if exists (from both storage and public)
-        if ($user->profile_photo) {
-            $oldStoragePath = public_path('storage/' . $user->profile_photo);
-            if (file_exists($oldStoragePath)) {
-                unlink($oldStoragePath);
-            }
-            $oldPublicPath = public_path($user->profile_photo);
-            if (file_exists($oldPublicPath)) {
-                unlink($oldPublicPath);
-            }
-        }
+        // Delete old photo: nothing to delete on Cloudinary for now
 
-        // Store new photo in storage/app/public/profile_photos
-        $path = $request->file('photo')->store('profile_photos', 'public');
+        // Upload to Cloudinary
+        $cloudinary = new Cloudinary([
+            'cloud' => [
+                'cloud_name' => env('CLOUDINARY_CLOUD_NAME'),
+                'api_key'    => env('CLOUDINARY_API_KEY'),
+                'api_secret' => env('CLOUDINARY_API_SECRET'),
+            ],
+        ]);
 
-        // Also copy to public/profile_photos for direct access (Render free tier workaround)
-        $storagePath = storage_path('app/public/' . $path);
-        $publicDir = public_path('profile_photos');
-        if (!file_exists($publicDir)) {
-            if (!mkdir($publicDir, 0777, true)) {
-                
-                error_log('Failed to create public/profile_photos directory');
-            }
-        }
-        $publicPath = $publicDir . '/' . basename($path);
-        if (!copy($storagePath, $publicPath)) {
-            error_log('Failed to copy profile photo from ' . $storagePath . ' to ' . $publicPath);
+        $uploadedFile = $request->file('photo')->getRealPath();
+        $result = $cloudinary->uploadApi()->upload($uploadedFile, [
+            'folder' => 'project_aura_profile_photos',
+            'public_id' => 'user_' . $user->id . '_' . time(),
+            'overwrite' => true,
+            'resource_type' => 'image',
+        ]);
+
+        $photoUrl = $result['secure_url'] ?? null;
+        if (!$photoUrl) {
+            return response()->json(['message' => 'Failed to upload to Cloudinary'], 500);
         }
 
         $user->update([
-            'profile_photo' => 'profile_photos/' . basename($path)
+            'profile_photo' => $photoUrl
         ]);
 
         return response()->json([
             'message' => 'Profile photo uploaded successfully',
-            'photo_url' => url('profile_photos/' . basename($path)),
-            'photo_path' => 'profile_photos/' . basename($path)
+            'photo_url' => $photoUrl,
+            'photo_path' => $photoUrl
         ]);
     }
 
