@@ -57,7 +57,8 @@ services:
       - key: SESSION_LIFETIME
         value: 120
     buildCommand: chmod +x ./build.sh && ./build.sh
-    startCommand: php artisan serve --host=0.0.0.0 --port=$PORT
+    # Temporarily run migrations at startup so free Render instances (no shell) apply them
+    startCommand: php artisan migrate --force --no-interaction && php artisan serve --host=0.0.0.0 --port=$PORT
     postdeploy: php artisan migrate --force --no-interaction
 
   # MySQL Database
