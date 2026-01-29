@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react'
+import normalizeTypes from '../../utils/normalizeTypes'
 import './MainForm.css'
 
 // Survey flow loads question sets from backend only. No local fallback.
@@ -15,8 +16,9 @@ export default function AbuseReport({ onFinish = () => {}, onCancel = () => {}, 
   
   // Main survey state
   const [step, setStep] = useState(0)
-  const [type, setType] = useState('Physical')
+  const [type, setType] = useState('')
   const [answers, setAnswers] = useState({})
+  const [otherTypeText, setOtherTypeText] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
   const [questionSetsMap, setQuestionSetsMap] = useState({})
@@ -50,14 +52,9 @@ export default function AbuseReport({ onFinish = () => {}, onCancel = () => {}, 
         }
         if (!cancelled) {
           setQuestionSetsMap(map)
-          const keys = Object.keys(map)
-          // Sort keys to move OTHERS to the end
-          const sortedKeys = keys.sort((a, b) => {
-            if (a.toLowerCase() === 'other' || a.toLowerCase() === 'others') return 1
-            if (b.toLowerCase() === 'other' || b.toLowerCase() === 'others') return -1
-            return a.localeCompare(b)
-          })
-          if (sortedKeys.length && !map[type]) setType(sortedKeys[0])
+          const sortedKeys = normalizeTypes(Object.keys(map))
+            // Do not auto-select a type; default is empty so user chooses explicitly
+            // leave `type` unchanged (empty) so the placeholder shows
           setLoading(false)
           setLoadMsg('')
         }
@@ -107,7 +104,9 @@ export default function AbuseReport({ onFinish = () => {}, onCancel = () => {}, 
   }
 
   const handleChoice = (e) => {
-    setType(e.target.value)
+    const val = e.target.value
+    setType(val)
+    if (!(val && (val.toLowerCase() === 'other' || val.toLowerCase() === 'others'))) setOtherTypeText('')
     setAnswers({})
     setStep(0)
     setError('')
@@ -147,13 +146,13 @@ export default function AbuseReport({ onFinish = () => {}, onCancel = () => {}, 
       setStep(1 + idx)
       return
     }
-    const run = async () => {
+        const run = async () => {
       try {
         setSubmitting(true)
         setSubmitError('')
         const base = getApiBase()
         const token = localStorage.getItem('authToken') || localStorage.getItem('token')
-        const payload = { type, answers }
+        const payload = { type: (type && (type.toLowerCase() === 'other' || type.toLowerCase() === 'others')) ? `${type} : ${otherTypeText}` : type, answers }
         const res = await fetch(`${base}/api/reports`, {
           method: 'POST',
           headers: {
@@ -262,14 +261,22 @@ export default function AbuseReport({ onFinish = () => {}, onCancel = () => {}, 
         <div className="survey-step safe-space">
           <h3 className="survey-title">Select type of abuse</h3>
           <select value={type} onChange={handleChoice} className="survey-select" disabled={Object.keys(questionSetsMap).length === 0}>
-            {Object.keys(questionSetsMap).sort((a, b) => {
-              if (a.toLowerCase() === 'other' || a.toLowerCase() === 'others') return 1
-              if (b.toLowerCase() === 'other' || b.toLowerCase() === 'others') return -1
-              return a.localeCompare(b)
-            }).map(k => <option key={k} value={k}>{k}</option>)}
+            <option value="">Select type</option>
+            {normalizeTypes(Object.keys(questionSetsMap)).map(k => <option key={k} value={k}>{k}</option>)}
           </select>
+          {(type && (type.toLowerCase() === 'other' || type.toLowerCase() === 'others')) && (
+            <div style={{marginTop:'0.75rem'}}>
+              <label style={{display:'block', marginBottom:'0.25rem'}}>Please specify</label>
+              <input className="survey-input" placeholder="Type the abuse category (e.g., Other - specify)" value={otherTypeText} onChange={e=>setOtherTypeText(e.target.value)} />
+            </div>
+          )}
           <div className="survey-actions">
-            <button type="button" className="survey-next" onClick={() => { setStep(1); setError('') }} disabled={!(questionSetsMap[type] && questionSetsMap[type].length)}>Start</button>
+            <button
+              type="button"
+              className="survey-next"
+              onClick={() => { setStep(1); setError('') }}
+              disabled={!(questionSetsMap[type] && questionSetsMap[type].length) || ((type && (type.toLowerCase() === 'other' || type.toLowerCase() === 'others')) && !otherTypeText.trim())}
+            >Start</button>
             <button type="button" className="survey-cancel" onClick={onCancel}>Cancel</button>
           </div>
         </div>
@@ -310,7 +317,7 @@ export default function AbuseReport({ onFinish = () => {}, onCancel = () => {}, 
         <div className="survey-step">
           <h3 className="survey-title">Review & Submit</h3>
           <div className="survey-review">
-            <div style={{marginBottom:'0.5rem'}}><strong>Type:</strong> {type}</div>
+            <div style={{marginBottom:'0.5rem'}}><strong>Type:</strong> {(type && (type.toLowerCase() === 'other' || type.toLowerCase() === 'others')) ? `${type} : ${otherTypeText}` : type}</div>
             {questionSet.length > 0 ? (
               questionSet.map((q, idx) => (
                 <div key={q.id || idx} style={{marginBottom:'0.5rem'}}>

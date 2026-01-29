@@ -99,37 +99,43 @@ class AuthController extends Controller
 
         // Delete old photo: nothing to delete on Cloudinary for now
 
-        // Upload to Cloudinary
-        $cloudinary = new Cloudinary([
-            'cloud' => [
-                'cloud_name' => env('CLOUDINARY_CLOUD_NAME'),
-                'api_key'    => env('CLOUDINARY_API_KEY'),
-                'api_secret' => env('CLOUDINARY_API_SECRET'),
-            ],
-        ]);
+        try {
+            // Upload to Cloudinary
+            $cloudinary = new Cloudinary([
+                'cloud' => [
+                    'cloud_name' => env('CLOUDINARY_CLOUD_NAME'),
+                    'api_key'    => env('CLOUDINARY_API_KEY'),
+                    'api_secret' => env('CLOUDINARY_API_SECRET'),
+                ],
+            ]);
 
-        $uploadedFile = $request->file('photo')->getRealPath();
-        $result = $cloudinary->uploadApi()->upload($uploadedFile, [
-            'folder' => 'project_aura_profile_photos',
-            'public_id' => 'user_' . $user->id . '_' . time(),
-            'overwrite' => true,
-            'resource_type' => 'image',
-        ]);
+            $uploadedFile = $request->file('photo')->getRealPath();
+            $result = $cloudinary->uploadApi()->upload($uploadedFile, [
+                'folder' => 'project_aura_profile_photos',
+                'public_id' => 'user_' . $user->id . '_' . time(),
+                'overwrite' => true,
+                'resource_type' => 'image',
+            ]);
 
-        $photoUrl = $result['secure_url'] ?? null;
-        if (!$photoUrl) {
-            return response()->json(['message' => 'Failed to upload to Cloudinary'], 500);
+            $photoUrl = $result['secure_url'] ?? null;
+            if (!$photoUrl) {
+                error_log('Cloudinary upload failed: No secure_url in response');
+                return response()->json(['message' => 'Failed to upload to Cloudinary'], 500);
+            }
+
+            $user->update([
+                'profile_photo' => $photoUrl
+            ]);
+
+            return response()->json([
+                'message' => 'Profile photo uploaded successfully',
+                'photo_url' => $photoUrl,
+                'photo_path' => $photoUrl
+            ]);
+        } catch (\Exception $e) {
+            error_log('Cloudinary upload exception: ' . $e->getMessage());
+            return response()->json(['message' => 'Server error: ' . $e->getMessage()], 500);
         }
-
-        $user->update([
-            'profile_photo' => $photoUrl
-        ]);
-
-        return response()->json([
-            'message' => 'Profile photo uploaded successfully',
-            'photo_url' => $photoUrl,
-            'photo_path' => $photoUrl
-        ]);
     }
 
     public function deleteProfilePhoto(Request $request)

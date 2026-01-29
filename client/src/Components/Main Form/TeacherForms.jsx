@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useMemo } from 'react'
+import normalizeTypes from '../../utils/normalizeTypes'
 import './TeacherForms.css'
 import { IoMdMenu } from 'react-icons/io'
 import { FaEye, FaEyeSlash } from 'react-icons/fa'
@@ -63,9 +64,26 @@ export default function TeacherForms({ onLogout = () => {} }) {
     try { const raw = localStorage.getItem('customQuestionSets'); return raw ? JSON.parse(raw) : {} } catch { return {} }
   })
   const [availableTypes, setAvailableTypes] = useState([])
+  
   const [typesError, setTypesError] = useState('')
   const [remoteSets, setRemoteSets] = useState([])
   const [editQS, setEditQS] = useState({ open:false, setId:null, setKey:'', index:-1, qItem:null })
+  const [savingQS, setSavingQS] = useState(false)
+  const [qsSearch, setQsSearch] = useState('')
+  const [newTypeTitle, setNewTypeTitle] = useState('')
+
+  const filteredRemoteRows = useMemo(() => {
+    const s = (qsSearch || '').trim().toLowerCase()
+    if (!Array.isArray(remoteSets) || remoteSets.length === 0) return []
+    return remoteSets.flatMap(set => {
+      const schema = Array.isArray(set.schema) ? set.schema : []
+      const matches = schema.filter((qItem) => {
+        if (!s) return true
+        return (String(set.key || '').toLowerCase().includes(s)) || (String(qItem.q || '').toLowerCase().includes(s))
+      })
+      return matches.map((qItem, idx) => ({ set, qItem, idx }))
+    })
+  }, [remoteSets, qsSearch])
 
   useEffect(() => {
     if (view !== 'add') return
@@ -82,16 +100,11 @@ export default function TeacherForms({ onLogout = () => {} }) {
         if (!res.ok) throw new Error('Failed to load question sets')
         const data = await res.json()
         const keys = Array.isArray(data) ? data.filter(it => it && it.key).map(it => it.key) : []
-        // Sort keys to move OTHERS to the end
-        const sortedKeys = keys.sort((a, b) => {
-          if (a.toLowerCase() === 'other' || a.toLowerCase() === 'others') return 1
-          if (b.toLowerCase() === 'other' || b.toLowerCase() === 'others') return -1
-          return a.localeCompare(b)
-        })
+        // Normalize keys (sort alphabetically, keep OTHERS at the end)
+        const sortedKeys = normalizeTypes(keys)
         if (!cancelled) {
           setRemoteSets(Array.isArray(data) ? data : [])
           setAvailableTypes(sortedKeys)
-          if (!newType && sortedKeys.length) setNewType(sortedKeys[0])
         }
       } catch (e) {
         if (!cancelled) {
@@ -475,35 +488,45 @@ export default function TeacherForms({ onLogout = () => {} }) {
       })
       const questionSets = qsRes.ok ? await qsRes.json() : []
       const allTypes = Array.isArray(questionSets) ? questionSets.map(qs => qs.key).filter(Boolean) : []
-      
+
+      // Determine canonical Other key from available types (prefer exact 'Other' or 'Others')
+      const canonicalOtherKey = (allTypes.find(k => String(k).toLowerCase() === 'other') || allTypes.find(k => String(k).toLowerCase() === 'others') || 'Other')
+
       // Count reports by type (already filtered to teacher's students by backend)
       const typeCounts = {}
-      allTypes.forEach(type => {
-        typeCounts[type] = 0
-      })
-      
+      allTypes.forEach(type => { typeCounts[type] = 0 })
+
       reports.forEach(report => {
-        const type = report.type || 'Unspecified'
-        if (type in typeCounts) {
-          typeCounts[type]++
+        let rtype = (report.type || 'Unspecified')
+        // Normalize student-submitted Other categories like "Other : category" -> canonical Other key
+        if (typeof rtype === 'string') {
+          const left = rtype.split(':')[0].trim()
+          if (left && (left.toLowerCase() === 'other' || left.toLowerCase() === 'others')) {
+            rtype = canonicalOtherKey
+          }
+        }
+
+        if (rtype in typeCounts) {
+          typeCounts[rtype]++
         } else {
-          typeCounts[type] = 1
+          // if this is an unknown type, add it so it still appears in analytics
+          typeCounts[rtype] = 1
         }
       })
       
-      // Convert to array and sort (move "Other" to the end)
-      const countsArray = Object.entries(typeCounts).map(([type, count]) => ({
-        type,
-        count
-      })).sort((a, b) => {
-        // Move "Other" or "Others" to the end
-        const aIsOther = a.type.toLowerCase() === 'other' || a.type.toLowerCase() === 'others'
-        const bIsOther = b.type.toLowerCase() === 'other' || b.type.toLowerCase() === 'others'
-        if (aIsOther && !bIsOther) return 1
-        if (!aIsOther && bIsOther) return -1
-        // Otherwise sort by count (highest first)
-        return b.count - a.count
-      })
+      // Convert to array and sort (move canonical "Other" to the end)
+      const countsArray = Object.entries(typeCounts).map(([type, count]) => ({ type, count }))
+        .sort((a, b) => {
+          const aKey = String(a.type || '').toLowerCase()
+          const bKey = String(b.type || '').toLowerCase()
+          const canonicalOtherLower = String(canonicalOtherKey || 'other').toLowerCase()
+          const aIsOther = aKey === canonicalOtherLower || aKey === 'other' || aKey === 'others' || aKey.startsWith('other')
+          const bIsOther = bKey === canonicalOtherLower || bKey === 'other' || bKey === 'others' || bKey.startsWith('other')
+          if (aIsOther && !bIsOther) return 1
+          if (!aIsOther && bIsOther) return -1
+          // Otherwise sort by count (highest first)
+          return b.count - a.count
+        })
       
       setAbuseTypeCounts(countsArray)
     } catch (e) {
@@ -633,8 +656,31 @@ export default function TeacherForms({ onLogout = () => {} }) {
       Object.keys(reportsByType).forEach(abuseType => {
         const typeReports = reportsByType[abuseType]
         
-        // Find the question set for this abuse type
-        const questionSet = Array.isArray(questionSets) ? questionSets.find(s => s && s.key === abuseType) : null
+        // Find the question set for this abuse type.
+        // Report types coming from students may be formatted like "Other : category".
+        // Try several matching strategies: exact key, base type (left of ':'), or matching title/category.
+        let questionSet = null
+        if (Array.isArray(questionSets)) {
+          // exact match first
+          questionSet = questionSets.find(s => s && s.key === abuseType) || null
+          if (!questionSet && typeof abuseType === 'string' && abuseType.includes(':')) {
+            const parts = abuseType.split(':').map(p => p.trim())
+            const base = parts[0]
+            const category = parts.slice(1).join(':').trim()
+            // try matching by base key
+            questionSet = questionSets.find(s => s && s.key === base) || null
+            // try matching by title or key containing category
+            if (!questionSet && category) {
+              const catLower = category.toLowerCase()
+              questionSet = questionSets.find(s => s && ((s.title && String(s.title).toLowerCase() === catLower) || (s.title && String(s.title).toLowerCase().includes(catLower)) || (s.key && String(s.key).toLowerCase().includes(catLower)))) || null
+            }
+          }
+          // last-resort: try matching by key containing the abuseType string
+          if (!questionSet) {
+            const needle = String(abuseType || '').toLowerCase()
+            questionSet = questionSets.find(s => s && s.key && String(s.key).toLowerCase().includes(needle)) || null
+          }
+        }
         const questions = Array.isArray(questionSet?.schema) ? questionSet.schema : []
         
         // Build header row: Student Name + Question columns
@@ -732,16 +778,79 @@ export default function TeacherForms({ onLogout = () => {} }) {
     setNewQuestions(prev => prev.map(q => q.id===id ? { ...q, ...patch } : q))
   }
   const removeQuestionLine = (id) => setNewQuestions(prev => prev.filter(q => q.id !== id))
-  const saveQuestionSet = () => {
-    if (!newType) return
+  const saveQuestionSet = async () => {
+    if (!newType) { alert('Please select a type'); return }
+    if (newType && (newType.toLowerCase() === 'other' || newType.toLowerCase() === 'others') && !newTypeTitle.trim()) { alert('Please provide a Title Category for Other(s)'); return }
+    if (!newQuestions || newQuestions.length === 0) { alert('Add at least one question'); return }
+
+    const isOtherSelected = newType && (newType.toLowerCase() === 'other' || newType.toLowerCase() === 'others')
+    const payloadKey = isOtherSelected ? (newTypeTitle || '').trim() : newType
     const formatted = newQuestions.map(q => {
-      const base = { id: `${newType}_${Math.random().toString(36).slice(2,8)}`, q: q.q || '', type: q.type, required: q.required }
+      const base = { id: `${payloadKey}_${Math.random().toString(36).slice(2,8)}`, q: q.q || '', type: q.type, required: q.required }
       if (q.type === 'choice') base.options = q.options.split(',').map(s=>s.trim()).filter(Boolean)
       return base
     })
-    setCustomSets(prev => ({ ...prev, [newType]: formatted }))
-    setNewType(''); setNewQuestions([])
-    setView('add')
+
+    if (isOtherSelected && !payloadKey) { alert('Please provide a valid Title Category for Other(s)'); return }
+
+    // Save locally so UI remains responsive (use payloadKey as set key)
+    setCustomSets(prev => ({ ...prev, [payloadKey]: formatted }))
+
+    // Try to persist to backend
+    setSavingQS(true)
+    try {
+      const token = localStorage.getItem('authToken') || localStorage.getItem('token')
+      const base = getApiBase()
+      if (token) {
+        // If target key already exists on remote, update instead of creating duplicate
+        const existing = Array.isArray(remoteSets) ? remoteSets.find(s => s && s.key === payloadKey) : null
+        if (existing && existing.id) {
+          // Merge schemas: append new questions to existing schema
+          const existingSchema = Array.isArray(existing.schema) ? existing.schema : []
+          const mergedSchema = [...existingSchema, ...formatted]
+          const res = await fetch(`${base}/api/question-sets/${existing.id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json', Accept: 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ key: existing.key, title: existing.title || payloadKey || null, schema: mergedSchema })
+          })
+          if (!res.ok) {
+            const msg = await res.json().catch(()=>({}))
+            throw new Error(msg.message || 'Failed to update question set')
+          }
+          const updated = await res.json()
+          setRemoteSets(prev => Array.isArray(prev) ? prev.map(s => s.id === updated.id ? updated : s) : [updated])
+        } else {
+          const res = await fetch(`${base}/api/question-sets`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Accept: 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ key: payloadKey, title: payloadKey || newTypeTitle || null, schema: formatted })
+          })
+          if (!res.ok) {
+            const msg = await res.json().catch(()=>({}))
+            throw new Error(msg.message || 'Failed to save question set')
+          }
+          const created = await res.json()
+          if (created && (created.id || created.data)) {
+            const createdSet = created.data || created
+            setRemoteSets(prev => Array.isArray(prev) ? [...prev, createdSet] : [createdSet])
+            setAvailableTypes(prev => normalizeTypes([...(Array.isArray(prev) ? prev : []), payloadKey]))
+          }
+        }
+      } else {
+        // No auth token — keep it local and warn user
+        console.warn('No auth token; questionnaire saved locally only')
+      }
+
+      setNewType('')
+      setNewTypeTitle('')
+      setNewQuestions([])
+      setView('add')
+      alert('Questionnaire saved.')
+    } catch (e) {
+      alert(e.message || 'Error saving questionnaire')
+    } finally {
+      setSavingQS(false)
+    }
   }
   const removeCustomSet = (key) => { const c = { ...customSets }; delete c[key]; setCustomSets(c) }
 
@@ -1593,9 +1702,22 @@ export default function TeacherForms({ onLogout = () => {} }) {
                 <h3>Add Questionnaire</h3>
                 <div className="card">
                   <label>Type</label>
-                  <select value={newType} onChange={e=>setNewType(e.target.value)}>
-                    {availableTypes.length === 0 ? <option value="">Select type</option> : availableTypes.map(t => <option key={t} value={t}>{t}</option>)}
+                  <select value={newType} onChange={e=>{
+                    const val = e.target.value
+                    setNewType(val)
+                    if (!(val && (val.toLowerCase() === 'other' || val.toLowerCase() === 'others'))) setNewTypeTitle('')
+                  }}>
+                    <option value="">Select type</option>
+                    {availableTypes.map(t => <option key={t} value={t}>{t}</option>)}
                   </select>
+                  {newType && (newType.toLowerCase() === 'other' || newType.toLowerCase() === 'others') && (
+                    <div className="form-field" style={{marginTop:'0.5rem'}}>
+                      <label className="form-label">Title Category <span className="required">*</span></label>
+                      <input className="form-input" value={newTypeTitle} onChange={e=>setNewTypeTitle(e.target.value)} />
+                     
+                    </div>
+                  )}
+                  {/* search moved to table header for better layout */}
                   {typesError && <div className="status-line" style={{color:'#b91c1c'}}>{typesError}</div>}
                   <div className="questions-list">
                     {newQuestions.map(q => (
@@ -1613,11 +1735,18 @@ export default function TeacherForms({ onLogout = () => {} }) {
                             <span style={{fontSize:'0.75rem', color:'#94a3b8', fontStyle:'italic'}}>Separate each option with a comma</span>
                           </div>
                         )}
-                        <button className="btn-link danger" onClick={()=>removeQuestionLine(q.id)}>Remove</button>
+                        <button type="button" className="btn-link danger" onClick={()=>removeQuestionLine(q.id)}>Remove</button>
                       </div>
                     ))}
-                    <div className="q-actions"><button className="btn-primary" onClick={addQuestionLine}>Add Question</button></div>
-                    <div className="q-actions"><button className="btn-primary" onClick={saveQuestionSet}>Save Questionnaire</button></div>
+                    <div className="q-actions"><button type="button" className="btn-primary" onClick={addQuestionLine} disabled={!newType}>Add Question</button></div>
+                    <div className="q-actions">
+                      <button type="button" className="btn-primary" onClick={saveQuestionSet} disabled={!newType || savingQS}>
+                        {savingQS ? 'Saving...' : 'Save Questionnaire'}
+                      </button>
+                      <div style={{fontSize:'0.85rem', color:'#6b7280', marginTop:'0.5rem'}}>
+                        Note: This questionnaire applies to all students.
+                      </div>
+                    </div>
                   </div>
                 </div>
 
@@ -1626,7 +1755,17 @@ export default function TeacherForms({ onLogout = () => {} }) {
                 </div>
 
                 <div className="card">
-                  <h4>All Question Sets</h4>
+                  <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem'}}>
+                    <h4 style={{margin: 0}}>All Question Sets</h4>
+                    <div style={{display: 'flex', gap: '0.5rem', alignItems: 'center'}}>
+                      <input
+                        placeholder="Search by type or question"
+                        value={qsSearch}
+                        onChange={e=>setQsSearch(e.target.value)}
+                        style={{padding: '0.5rem 0.75rem', borderRadius: '6px', border: '1px solid #cbd5e1', width: '300px'}}
+                      />
+                    </div>
+                  </div>
                   <div className="table-wrap">
                     <table className="reports-table">
                       <thead>
@@ -1637,24 +1776,37 @@ export default function TeacherForms({ onLogout = () => {} }) {
                         </tr>
                       </thead>
                       <tbody>
-                        {remoteSets.length === 0 ? (
+                        {filteredRemoteRows.length === 0 ? (
                           <tr>
-                            <td colSpan={3} className="empty">No question sets added yet.</td>
+                            <td colSpan={3} className="empty">No question sets match your search.</td>
                           </tr>
                         ) : (
-                          remoteSets.flatMap(set => (
-                            (Array.isArray(set.schema) ? set.schema : []).map((qItem, idx) => (
-                              <tr key={`${set.key}_${qItem.id || idx}`}>
-                                <td>{set.key}</td>
-                                <td className="cell-question">{qItem.q || ''}</td>
+                          (() => {
+                            const rows = Array.isArray(filteredRemoteRows) ? [...filteredRemoteRows] : []
+                            rows.sort((a,b) => {
+                              const ak = String(a.set?.key || '').toLowerCase()
+                              const bk = String(b.set?.key || '').toLowerCase()
+                              const aIsOther = ak === 'other' || ak === 'others'
+                              const bIsOther = bk === 'other' || bk === 'others'
+                              if (aIsOther && !bIsOther) return 1
+                              if (!aIsOther && bIsOther) return -1
+                              if (ak !== bk) return ak.localeCompare(bk)
+                              const aq = String(a.qItem?.q || '')
+                              const bq = String(b.qItem?.q || '')
+                              return aq.localeCompare(bq)
+                            })
+                            return rows.map(item => (
+                              <tr key={`${item.set.key}_${item.qItem.id || item.idx}`}>
+                                <td>{item.set.key}</td>
+                                <td className="cell-question">{item.qItem.q || ''}</td>
                                 <td>
                                   <button className="btn-link" onClick={() => {
-                                    setEditQS({ open:true, setId:set.id, setKey:set.key, index: idx, qItem: { ...qItem } })
+                                    setEditQS({ open:true, setId:item.set.id, setKey:item.set.key, index: item.idx, qItem: { ...item.qItem } })
                                   }}>Edit</button>
                                 </td>
                               </tr>
                             ))
-                          ))
+                          })()
                         )}
                       </tbody>
                     </table>
