@@ -11,7 +11,7 @@ class TeacherController extends Controller
     {
         // Return all users with role 'teacher' or 'counselor'
         $teachers = User::whereIn('role', ['teacher', 'counselor', 'admin'])
-            ->select('id', 'first_name', 'middle_name', 'last_name', 'email', 'role')
+            ->select('id', 'first_name', 'middle_name', 'last_name', 'email', 'role', 'gender')
             ->orderBy('first_name')
             ->get();
         

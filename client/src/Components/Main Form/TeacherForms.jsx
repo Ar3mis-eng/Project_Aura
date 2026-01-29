@@ -43,7 +43,7 @@ export default function TeacherForms({ onLogout = () => {} }) {
 
   // Settings / profile
   const [profile, setProfile] = useState(() => {
-    try { const raw = localStorage.getItem('teacher_profile'); return raw ? JSON.parse(raw) : { first_name:'', middle_name:'', last_name:'', email:'', contact_number:'', address:'', img:'' } } catch { return { first_name:'', middle_name:'', last_name:'', email:'', contact_number:'', address:'', img:'' } }
+    try { const raw = localStorage.getItem('teacher_profile'); return raw ? JSON.parse(raw) : { first_name:'', middle_name:'', last_name:'', email:'', contact_number:'', address:'', img:'', gender:'' } } catch { return { first_name:'', middle_name:'', last_name:'', email:'', contact_number:'', address:'', img:'', gender:'' } }
   })
   const [passwords, setPasswords] = useState({ current:'', new:'', confirm:'' })
   const [profileLoading, setProfileLoading] = useState(false)
@@ -52,6 +52,7 @@ export default function TeacherForms({ onLogout = () => {} }) {
 
   // Analytics
   const [analytics, setAnalytics] = useState({ total_students: 0, total_teachers: 0, total_reports: 0, total_logins: 0 })
+  const [genderCounts, setGenderCounts] = useState({ students: { male: 0, female: 0, other: 0 }, teachers: { male: 0, female: 0, other: 0 } })
   const [analyticsLoading, setAnalyticsLoading] = useState(false)
   const [analyticsError, setAnalyticsError] = useState('')
   const [abuseTypeCounts, setAbuseTypeCounts] = useState([])
@@ -119,7 +120,7 @@ export default function TeacherForms({ onLogout = () => {} }) {
   }, [view])
 
   // Student Management
-  const [studentForm, setStudentForm] = useState({ first_name:'', middle_name:'', last_name:'', age:'', birthday:'', contact_number:'', address:'', email:'', password:'', confirm:'' })
+  const [studentForm, setStudentForm] = useState({ first_name:'', middle_name:'', last_name:'', gender:'', age:'', birthday:'', contact_number:'', address:'', email:'', password:'', confirm:'' })
   const [studentStatus, setStudentStatus] = useState('')
   const [showStudentPassword, setShowStudentPassword] = useState(false)
   const [showStudentConfirm, setShowStudentConfirm] = useState(false)
@@ -481,6 +482,27 @@ export default function TeacherForms({ onLogout = () => {} }) {
       if (!res.ok) throw new Error('Failed to load analytics')
       const data = await res.json()
       setAnalytics(data.data || { total_students: 0, total_teachers: 0, total_reports: 0, total_logins: 0 })
+      // Use analytics payload's aggregated gender and per-type counts (global across all teachers)
+      try {
+        const analyticsData = data.data || {}
+        if (analyticsData.student_genders) {
+          setGenderCounts({ students: { male: analyticsData.student_genders.male || 0, female: analyticsData.student_genders.female || 0, other: analyticsData.student_genders.other || 0 },
+                             teachers: { male: analyticsData.teacher_genders.male || 0, female: analyticsData.teacher_genders.female || 0, other: analyticsData.teacher_genders.other || 0 } })
+        }
+        // If backend provided per-type report gender breakdown, use it
+        if (analyticsData.reports_by_type) {
+          // reports_by_type is an object keyed by type
+          const typeCounts = {}
+          Object.entries(analyticsData.reports_by_type).forEach(([type, vals]) => {
+            typeCounts[type] = { count: vals.count || 0, male: vals.male || 0, female: vals.female || 0, other: vals.other || 0 }
+          })
+          // We'll build countsArray later after we fetch question-sets (below), but seed it now
+          // Attach to a temporary variable for later conversion
+          window.__analytics_reports_by_type = typeCounts
+        }
+      } catch (e) {
+        // ignore gender counting errors
+      }
       
       // Fetch question sets to get all abuse types
       const qsRes = await fetch(`${base}/api/question-sets`, {
@@ -492,30 +514,32 @@ export default function TeacherForms({ onLogout = () => {} }) {
       // Determine canonical Other key from available types (prefer exact 'Other' or 'Others')
       const canonicalOtherKey = (allTypes.find(k => String(k).toLowerCase() === 'other') || allTypes.find(k => String(k).toLowerCase() === 'others') || 'Other')
 
-      // Count reports by type (already filtered to teacher's students by backend)
-      const typeCounts = {}
-      allTypes.forEach(type => { typeCounts[type] = 0 })
+      // Build type counts using aggregated reports_by_type from analytics when available
+      let mergedTypeCounts = {}
+      if (window.__analytics_reports_by_type) {
+        mergedTypeCounts = { ...window.__analytics_reports_by_type }
+      }
+      // initialize known types from question sets
+      allTypes.forEach(type => { if (!(type in mergedTypeCounts)) mergedTypeCounts[type] = { count: 0, male: 0, female: 0, other: 0 } })
 
-      reports.forEach(report => {
-        let rtype = (report.type || 'Unspecified')
-        // Normalize student-submitted Other categories like "Other : category" -> canonical Other key
-        if (typeof rtype === 'string') {
-          const left = rtype.split(':')[0].trim()
+      // Normalize keys that look like "Other : ..." to canonicalOtherKey
+      const normalized = {}
+      Object.entries(mergedTypeCounts).forEach(([type, data]) => {
+        let key = type
+        if (typeof key === 'string') {
+          const left = key.split(':')[0].trim()
           if (left && (left.toLowerCase() === 'other' || left.toLowerCase() === 'others')) {
-            rtype = canonicalOtherKey
+            key = canonicalOtherKey
           }
         }
-
-        if (rtype in typeCounts) {
-          typeCounts[rtype]++
-        } else {
-          // if this is an unknown type, add it so it still appears in analytics
-          typeCounts[rtype] = 1
-        }
+        if (!normalized[key]) normalized[key] = { count: 0, male: 0, female: 0, other: 0 }
+        normalized[key].count += (data.count || 0)
+        normalized[key].male += (data.male || 0)
+        normalized[key].female += (data.female || 0)
+        normalized[key].other += (data.other || 0)
       })
-      
-      // Convert to array and sort (move canonical "Other" to the end)
-      const countsArray = Object.entries(typeCounts).map(([type, count]) => ({ type, count }))
+
+      const countsArray = Object.entries(normalized).map(([type, data]) => ({ type, count: data.count, male: data.male, female: data.female, other: data.other }))
         .sort((a, b) => {
           const aKey = String(a.type || '').toLowerCase()
           const bKey = String(b.type || '').toLowerCase()
@@ -524,10 +548,12 @@ export default function TeacherForms({ onLogout = () => {} }) {
           const bIsOther = bKey === canonicalOtherLower || bKey === 'other' || bKey === 'others' || bKey.startsWith('other')
           if (aIsOther && !bIsOther) return 1
           if (!aIsOther && bIsOther) return -1
-          // Otherwise sort by count (highest first)
           return b.count - a.count
         })
-      
+
+      // Cleanup temporary storage
+      try { delete window.__analytics_reports_by_type } catch(e){}
+
       setAbuseTypeCounts(countsArray)
     } catch (e) {
       setAnalyticsError(e.message || 'Error loading analytics')
@@ -893,7 +919,8 @@ export default function TeacherForms({ onLogout = () => {} }) {
         email: userData.email || '',
         contact_number: userData.contact_number || '',
         address: userData.address || '',
-        img: userData.profile_photo ? `${base}/storage/${userData.profile_photo}` : ''
+        img: userData.profile_photo ? `${base}/storage/${userData.profile_photo}` : '',
+        gender: userData.gender || ''
       }
       
       setProfile(profileData)
@@ -937,7 +964,8 @@ export default function TeacherForms({ onLogout = () => {} }) {
           last_name: profile.last_name,
           email: profile.email,
           contact_number: profile.contact_number,
-          address: profile.address
+          address: profile.address,
+          gender: profile.gender
         })
       })
       
@@ -957,7 +985,8 @@ export default function TeacherForms({ onLogout = () => {} }) {
         last_name: data.user?.last_name || profile.last_name,
         email: data.user?.email || profile.email,
         contact_number: data.user?.contact_number || profile.contact_number,
-        address: data.user?.address || profile.address
+        address: data.user?.address || profile.address,
+        gender: data.user?.gender ?? profile.gender
       }
       setProfile(updatedProfile)
       localStorage.setItem('teacher_profile', JSON.stringify(updatedProfile))
@@ -1330,18 +1359,27 @@ export default function TeacherForms({ onLogout = () => {} }) {
                           {analytics.total_students}
                         </div>
                         <div style={{fontSize:'1rem', color:'#6b7280', fontWeight:'500'}}>Total Students</div>
+                        <div style={{fontSize:'0.85rem', color:'#9ca3af', marginTop:'0.5rem'}}>
+                          Male: {genderCounts.students.male} • Female: {genderCounts.students.female}
+                        </div>
                       </div>
                       <div className="card" style={{textAlign:'center', padding:'1.5rem'}}>
                         <div style={{fontSize:'2.5rem', fontWeight:'700', color:'#764ba2', marginBottom:'0.5rem'}}>
                           {analytics.total_teachers}
                         </div>
                         <div style={{fontSize:'1rem', color:'#6b7280', fontWeight:'500'}}>Total Teachers</div>
+                        <div style={{fontSize:'0.85rem', color:'#9ca3af', marginTop:'0.5rem'}}>
+                          Male: {genderCounts.teachers.male} • Female: {genderCounts.teachers.female}
+                        </div>
                       </div>
                       <div className="card" style={{textAlign:'center', padding:'1.5rem'}}>
                         <div style={{fontSize:'2.5rem', fontWeight:'700', color:'#059669', marginBottom:'0.5rem'}}>
                           {analytics.total_reports}
                         </div>
                         <div style={{fontSize:'1rem', color:'#6b7280', fontWeight:'500'}}>Reports Submitted</div>
+                        <div style={{fontSize:'0.85rem', color:'#9ca3af', marginTop:'0.5rem'}}>
+                          Male: {(reports || []).filter(r => ((r.student && r.student.gender) || '').toString().toLowerCase() === 'male').length} • Female: {(reports || []).filter(r => ((r.student && r.student.gender) || '').toString().toLowerCase() === 'female').length}
+                        </div>
                       </div>
                       <div className="card" style={{textAlign:'center', padding:'1.5rem'}}>
                         <div style={{fontSize:'2.5rem', fontWeight:'700', color:'#dc2626', marginBottom:'0.5rem'}}>
@@ -1366,6 +1404,9 @@ export default function TeacherForms({ onLogout = () => {} }) {
                                   {item.count}
                                 </div>
                                 <div style={{fontSize:'1rem', color:'#6b7280', fontWeight:'500'}}>{item.type}</div>
+                                <div style={{fontSize:'0.85rem', color:'#9ca3af', marginTop:'0.5rem'}}>
+                                  Male: {item.male || 0} • Female: {item.female || 0}
+                                </div>
                               </div>
                             )
                           })}
@@ -1869,7 +1910,7 @@ export default function TeacherForms({ onLogout = () => {} }) {
                   <div className="table-wrap">
                     <table className="reports-table">
                       <thead>
-                        <tr><th>Name</th><th>Age</th><th>Birthday</th><th>Contact</th><th>Address</th><th>Email</th><th>Actions</th></tr>
+                        <tr><th>Name</th><th>Gender</th><th>Age</th><th>Birthday</th><th>Contact</th><th>Address</th><th>Email</th><th>Actions</th></tr>
                       </thead>
                       <tbody>
                         {studentsLoading ? (
@@ -1880,6 +1921,7 @@ export default function TeacherForms({ onLogout = () => {} }) {
                           filteredStudents.map(s => (
                             <tr key={s.id}>
                               <td>{s.first_name} {s.middle_name ? s.middle_name+' ' : ''}{s.last_name}</td>
+                              <td>{(s.gender || '').charAt(0).toUpperCase() + (s.gender || '').slice(1)}</td>
                               <td>{s.age ?? ''}</td>
                               <td>{s.birthday ? String(s.birthday).slice(0,10) : ''}</td>
                               <td>{s.contact_number ?? ''}</td>
@@ -1891,6 +1933,7 @@ export default function TeacherForms({ onLogout = () => {} }) {
                                   first_name: s.first_name || '',
                                   middle_name: s.middle_name || '',
                                   last_name: s.last_name || '',
+                                  gender: s.gender || '',
                                   age: s.age ?? '',
                                   birthday: s.birthday ? String(s.birthday).slice(0,10) : '',
                                   contact_number: s.contact_number || '',
@@ -1921,6 +1964,14 @@ export default function TeacherForms({ onLogout = () => {} }) {
                     <div>
                       <label>Last name</label>
                       <input value={studentForm.last_name} onChange={e=>setStudentForm(f=>({...f, last_name:e.target.value}))} />
+                    </div>
+                    <div>
+                      <label>Gender</label>
+                      <select value={studentForm.gender} onChange={e=>setStudentForm(f=>({...f, gender: e.target.value}))}>
+                        <option value="">Select</option>
+                        <option value="male">Male</option>
+                        <option value="female">Female</option>
+                      </select>
                     </div>
                     <div>
                       <label>Email</label>
@@ -2000,7 +2051,7 @@ export default function TeacherForms({ onLogout = () => {} }) {
                     <button className="btn-primary" onClick={async () => {
                       try {
                         setStudentStatus('')
-                        const { first_name, middle_name, last_name, email, password, confirm, age, birthday, contact_number, address } = studentForm
+                        const { first_name, middle_name, last_name, gender, email, password, confirm, age, birthday, contact_number, address } = studentForm
                         if (!first_name || !last_name || !email || !password) { setStudentStatus('Please fill all required fields'); return }
                         if (password !== confirm) { setStudentStatus('Passwords do not match'); return }
                         const token = localStorage.getItem('authToken')
@@ -2008,7 +2059,7 @@ export default function TeacherForms({ onLogout = () => {} }) {
                         const res = await fetch(`${getApiBase()}/api/students`, {
                           method: 'POST',
                           headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'Authorization': `Bearer ${token}` },
-                          body: JSON.stringify({ first_name, middle_name, last_name, email, password, age: age? Number(age): undefined, birthday, contact_number, address })
+                          body: JSON.stringify({ first_name, middle_name, last_name, gender, email, password, age: age? Number(age): undefined, birthday, contact_number, address })
                         })
                         if (!res.ok) {
                           const msg = await res.json().catch(()=>({}))
@@ -2016,14 +2067,14 @@ export default function TeacherForms({ onLogout = () => {} }) {
                         }
                         const created = await res.json()
                         setStudentStatus(`Student registered: ${created.first_name} ${created.last_name}`)
-                        setStudentForm({ first_name:'', middle_name:'', last_name:'', age:'', birthday:'', contact_number:'', address:'', email:'', password:'', confirm:'' })
+                        setStudentForm({ first_name:'', middle_name:'', last_name:'', gender:'', age:'', birthday:'', contact_number:'', address:'', email:'', password:'', confirm:'' })
                         // Automatically refresh the students table
                         fetchStudents()
                       } catch (e) {
                         setStudentStatus(e.message || 'Error')
                       }
                     }}>Register</button>
-                    <button className="btn-ghost" onClick={()=>{ setStudentForm({ first_name:'', middle_name:'', last_name:'', age:'', birthday:'', contact_number:'', address:'', email:'', password:'', confirm:'' }); setStudentStatus('') }}>Clear</button>
+                    <button className="btn-ghost" onClick={()=>{ setStudentForm({ first_name:'', middle_name:'', last_name:'', gender:'', age:'', birthday:'', contact_number:'', address:'', email:'', password:'', confirm:'' }); setStudentStatus('') }}>Clear</button>
                   </div>
                 </div>
               </div>
@@ -2048,6 +2099,15 @@ export default function TeacherForms({ onLogout = () => {} }) {
                     <div>
                       <label>Last name</label>
                       <input value={editStudent.last_name} onChange={e=>setEditStudent(s=>({...s, last_name:e.target.value}))} />
+                    </div>
+                    <div>
+                      <label>Gender</label>
+                      <select value={editStudent.gender} onChange={e=>setEditStudent(s=>({...s, gender: e.target.value}))}>
+                        <option value="">Select</option>
+                        <option value="male">Male</option>
+                        <option value="female">Female</option>
+                        <option value="other">Other</option>
+                      </select>
                     </div>
                     <div>
                       <label>Email</label>
@@ -2075,7 +2135,17 @@ export default function TeacherForms({ onLogout = () => {} }) {
                       try {
                         const token = localStorage.getItem('authToken');
                         if (!token) { alert('Not authenticated'); return }
-                        const payload = { ...editStudent, age: editStudent.age? Number(editStudent.age): undefined }
+                        const payload = {
+                          first_name: editStudent.first_name,
+                          middle_name: editStudent.middle_name,
+                          last_name: editStudent.last_name,
+                          gender: editStudent.gender,
+                          email: editStudent.email,
+                          age: editStudent.age? Number(editStudent.age): undefined,
+                          birthday: editStudent.birthday,
+                          contact_number: editStudent.contact_number,
+                          address: editStudent.address
+                        }
                         const res = await fetch(`${getApiBase()}/api/students/${editStudent.id}`, {
                           method: 'PUT',
                           headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'Authorization': `Bearer ${token}` },
@@ -2132,6 +2202,10 @@ export default function TeacherForms({ onLogout = () => {} }) {
                             <div className="profile-field">
                               <label>CONTACT NUMBER</label>
                               <p>{profile.contact_number || 'Not set'}</p>
+                            </div>
+                            <div className="profile-field">
+                              <label>GENDER</label>
+                              <p>{profile.gender ? (profile.gender.charAt(0).toUpperCase() + profile.gender.slice(1)) : 'Not set'}</p>
                             </div>
                             <div className="profile-field">
                               <label>ADDRESS</label>
@@ -2202,6 +2276,14 @@ export default function TeacherForms({ onLogout = () => {} }) {
                       
                       <label>Last Name</label>
                       <input value={profile.last_name} onChange={e=>setProfile(p=>({...p, last_name: e.target.value}))} />
+                      
+                      <label>Gender</label>
+                      <select value={profile.gender} onChange={e=>setProfile(p=>({...p, gender: e.target.value}))}>
+                        <option value="">Select</option>
+                        <option value="male">Male</option>
+                        <option value="female">Female</option>
+                        <option value="other">Other</option>
+                      </select>
                       
                       <label>Email</label>
                       <input type="email" value={profile.email} onChange={e=>setProfile(p=>({...p, email: e.target.value}))} required />
