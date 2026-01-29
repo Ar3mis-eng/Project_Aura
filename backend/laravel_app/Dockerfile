@@ -38,5 +38,6 @@ RUN chown -R www-data:www-data /var/www \
 # Expose port
 EXPOSE 8000
 
-# Start Laravel server
-CMD php artisan serve --host=0.0.0.0 --port=${PORT:-8000}
+# Start Laravel server (run migrations at container start)
+# NOTE: run migrations here because Render's Docker runtime ignores render.yaml startCommand/postdeploy on free plans
+CMD ["sh","-lc","php artisan migrate --force --no-interaction && php artisan serve --host=0.0.0.0 --port=${PORT:-8000}"]
