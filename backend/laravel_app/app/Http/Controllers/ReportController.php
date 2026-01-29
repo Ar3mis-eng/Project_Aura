@@ -12,7 +12,7 @@ class ReportController extends Controller
         $user = $request->user();
         if (($user->role ?? 'student') === 'teacher') {
             // Teachers can only see reports from students they created
-            $reports = Report::with('student:id,first_name,last_name,email,created_by,gender')
+            $reports = Report::with('student:id,first_name,last_name,email,created_by')
                 ->whereHas('student', function($query) use ($user) {
                     $query->where('created_by', $user->id);
                 })
@@ -20,7 +20,7 @@ class ReportController extends Controller
                 ->paginate(20);
         } elseif (($user->role ?? 'student') === 'admin') {
             // Admins can see all reports
-            $reports = Report::with('student:id,first_name,last_name,email,gender')->orderByDesc('submitted_at')->paginate(20);
+            $reports = Report::with('student:id,first_name,last_name,email')->orderByDesc('submitted_at')->paginate(20);
         } else {
             // Students can only see their own reports
             $reports = Report::where('student_id', $user->id)->orderByDesc('submitted_at')->paginate(20);
@@ -49,7 +49,7 @@ class ReportController extends Controller
 
     public function show(Request $request, $id)
     {
-        $report = Report::with('student:id,first_name,last_name,email,gender')->findOrFail($id);
+        $report = Report::with('student:id,first_name,last_name,email')->findOrFail($id);
         $user = $request->user();
         if (($user->role ?? 'student') === 'teacher' || ($user->role ?? 'student') === 'admin' || $report->student_id === $user->id) {
             return response()->json($report);

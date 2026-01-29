@@ -56,7 +56,6 @@ class AuthController extends Controller
             'first_name' => 'nullable|string|max:255',
             'middle_name' => 'nullable|string|max:255',
             'last_name' => 'nullable|string|max:255',
-            'gender' => 'nullable|in:male,female,other',
             'email' => 'required|email|unique:users,email,' . $user->id,
             'contact_number' => 'nullable|string|max:20',
             'address' => 'nullable|string|max:500',

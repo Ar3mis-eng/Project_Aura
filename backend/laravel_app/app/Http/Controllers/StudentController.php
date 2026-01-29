@@ -25,7 +25,7 @@ class StudentController extends Controller
         // Admins can see all students
         
         $students = $query
-            ->select('id','first_name','middle_name','last_name','age','birthday','contact_number','address','email','gender','created_at')
+            ->select('id','first_name','middle_name','last_name','age','birthday','contact_number','address','email','created_at')
             ->orderByDesc('created_at')
             ->paginate(20);
         return response()->json($students);
@@ -42,7 +42,6 @@ class StudentController extends Controller
             'first_name' => 'required|string|max:100',
             'middle_name' => 'nullable|string|max:100',
             'last_name' => 'required|string|max:100',
-            'gender' => 'nullable|in:male,female,other',
             'email' => 'required|email|unique:users,email',
             'password' => 'required|string|min:6',
             'age' => 'nullable|integer|min:5|max:120',
@@ -64,10 +63,9 @@ class StudentController extends Controller
             'birthday' => $data['birthday'] ?? null,
             'contact_number' => $data['contact_number'] ?? null,
             'address' => $data['address'] ?? null,
-            'gender' => $data['gender'] ?? null,
         ]);
 
-        return response()->json($student->only(['id','first_name','middle_name','last_name','email','age','birthday','contact_number','address','gender']), 201);
+        return response()->json($student->only(['id','first_name','middle_name','last_name','email','age','birthday','contact_number','address']), 201);
     }
 
     public function update(Request $request, $id)
@@ -90,7 +88,6 @@ class StudentController extends Controller
             'first_name' => 'required|string|max:100',
             'middle_name' => 'nullable|string|max:100',
             'last_name' => 'required|string|max:100',
-            'gender' => 'nullable|in:male,female,other',
             'email' => [
                 'required','email', Rule::unique('users','email')->ignore($student->id)
             ],
@@ -110,10 +107,9 @@ class StudentController extends Controller
             'birthday' => $data['birthday'] ?? null,
             'contact_number' => $data['contact_number'] ?? null,
             'address' => $data['address'] ?? null,
-            'gender' => $data['gender'] ?? null,
         ]);
 
-        return response()->json($student->only(['id','first_name','middle_name','last_name','email','age','birthday','contact_number','address','gender']), 200);
+        return response()->json($student->only(['id','first_name','middle_name','last_name','email','age','birthday','contact_number','address']), 200);
     }
 
     public function destroy(Request $request, $id)
