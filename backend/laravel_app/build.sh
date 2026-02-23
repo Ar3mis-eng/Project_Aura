@@ -12,6 +12,9 @@ php artisan view:clear
 echo "Running database migrations..."
 php artisan migrate --force --no-interaction
 
+echo "Seeding demo data..."
+php artisan db:seed --force --no-interaction
+
 echo "Creating storage symlink..."
 php artisan storage:link
 

@@ -18,6 +18,7 @@ class DemoSeeder extends Seeder
                 'first_name' => 'John',
                 'last_name' => 'Ronan',
                 'role' => 'teacher',
+                'gender' => 'male',
                 'password' => Hash::make('password'),
             ]
         );
@@ -30,6 +31,7 @@ class DemoSeeder extends Seeder
                 'middle_name' => 'J.',
                 'last_name' => 'Balahim',
                 'role' => 'teacher',
+                'gender' => 'female',
                 'password' => Hash::make('password123'),
                 'address' => 'BLOCK 8 LOT 4 MALAGAMOT PANACAN DC',
                 'contact_number' => '09171076192',
