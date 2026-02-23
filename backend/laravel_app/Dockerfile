@@ -11,7 +11,10 @@ RUN apt-get update && apt-get install -y \
     default-libmysqlclient-dev \
     zip \
     unzip \
-    ca-certificates
+    ca-certificates \
+    nginx \
+    supervisor \
+    gettext-base
 
 # Clear cache
 RUN apt-get clean && rm -rf /var/lib/apt/lists/*
@@ -36,12 +39,15 @@ RUN chown -R www-data:www-data /var/www \
     && chmod -R 755 /var/www/storage \
     && chmod -R 755 /var/www/bootstrap/cache
 
-# Expose port
+# Copy nginx template and supervisor configs
+COPY docker/nginx.conf /etc/nginx/conf.d/default.conf.template
+COPY docker/supervisord.conf /etc/supervisor/conf.d/supervisord.conf
+COPY docker/start.sh /start.sh
+RUN chmod +x /start.sh
+
+# Remove default nginx site
+RUN rm -f /etc/nginx/sites-enabled/default
+
 EXPOSE 8000
 
-# NOTE: Render's Docker free plan ignores render.yaml startCommand/postdeploy,
-# so migrations and seeding must run here at container start.
-CMD php artisan config:clear && \
-    php artisan migrate --force --no-interaction && \
-    php artisan db:seed --force --no-interaction && \
-    php artisan serve --host=0.0.0.0 --port=${PORT:-8000}
+CMD ["/start.sh"]
