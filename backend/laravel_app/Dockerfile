@@ -8,15 +8,16 @@ RUN apt-get update && apt-get install -y \
     libonig-dev \
     libxml2-dev \
     libpq-dev \
+    default-libmysqlclient-dev \
     zip \
     unzip \
-    postgresql-client
+    ca-certificates
 
 # Clear cache
 RUN apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Install PHP extensions
-RUN docker-php-ext-install pdo_pgsql pgsql mbstring exif pcntl bcmath gd
+# Install PHP extensions (MySQL + PostgreSQL)
+RUN docker-php-ext-install pdo_mysql pdo_pgsql pgsql mbstring exif pcntl bcmath gd
 
 # Get latest Composer
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
@@ -38,7 +39,9 @@ RUN chown -R www-data:www-data /var/www \
 # Expose port
 EXPOSE 8000
 
-# Start Laravel server (run migrations at container start)
-# NOTE: run migrations here because Render's Docker runtime ignores render.yaml startCommand/postdeploy on free plans
-# Start Laravel server
-CMD php artisan serve --host=0.0.0.0 --port=${PORT:-8000}
+# NOTE: Render's Docker free plan ignores render.yaml startCommand/postdeploy,
+# so migrations and seeding must run here at container start.
+CMD php artisan config:clear && \
+    php artisan migrate --force --no-interaction && \
+    php artisan db:seed --force --no-interaction && \
+    php artisan serve --host=0.0.0.0 --port=${PORT:-8000}
