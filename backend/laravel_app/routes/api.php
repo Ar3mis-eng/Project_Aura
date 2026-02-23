@@ -12,6 +12,11 @@ use App\Http\Controllers\StudentController;
 use App\Http\Controllers\TeacherController;
 use App\Http\Controllers\AnalyticsController;
 
+// Health check - used by UptimeRobot to keep the service alive
+Route::get('/health', function () {
+    return response()->json(['status' => 'ok']);
+});
+
 // Setup route - run this once to initialize database
 Route::get('/setup', function () {
     try {
